@@ -22,8 +22,6 @@ scheduled by Kubernetes.
   no contention
 - **Observability**: Each run is a discrete Kubernetes Job with its own logs,
   events, and status
-- **Natural fit**: Hugh Hackman (VP of Engineering Operations) already has cluster
-  access and can manage Job lifecycle
 
 ## Architecture
 
@@ -75,7 +73,7 @@ stdout and writes it back to the DB via the `AdapterExecutionResult` return valu
 With a Job, the return path needs to be async.
 
 Options:
-- **Job polls completion then reads logs**: Paperclip watches Job until `Complete`
+- **Watch Job to completion then parse logs**: Paperclip watches Job until `Complete`
   or `Failed`, then reads full logs and parses result. Simple but blocking.
 - **Agent POSTs result to Paperclip API on completion**: Requires agent to know
   the Paperclip API endpoint and auth token.
