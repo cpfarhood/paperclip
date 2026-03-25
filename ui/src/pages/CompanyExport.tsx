@@ -680,7 +680,7 @@ export function CompanyExport() {
   const exportPreviewMutation = useMutation({
     mutationFn: () =>
       companiesApi.exportPreview(selectedCompanyId!, {
-        include: { company: true, agents: true, projects: true, issues: true },
+        include: { company: true, agents: true, projects: true, issues: false },
         sidebarOrder,
       }),
     onSuccess: (result) => {
@@ -728,7 +728,7 @@ export function CompanyExport() {
   const downloadMutation = useMutation({
     mutationFn: () =>
       companiesApi.exportPackage(selectedCompanyId!, {
-        include: { company: true, agents: true, projects: true, issues: true },
+        include: { company: true, agents: true, projects: true, issues: false },
         selectedFiles: Array.from(checkedFiles).sort(),
         sidebarOrder,
       }),
