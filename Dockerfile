@@ -14,9 +14,9 @@ RUN apt-get update \
   && curl -LsSf https://astral.sh/uv/install.sh | sh \
   && mv /root/.local/bin/uv /usr/local/bin/uv \
   && mv /root/.local/bin/uvx /usr/local/bin/uvx \
-  && curl -fsSL "https://github.com/bitnami-labs/sealed-secrets/releases/latest/download/kubeseal-$(uname -s | tr '[:upper:]' '[:lower:]')-$(dpkg --print-architecture)" \
-       -o /usr/local/bin/kubeseal \
-  && chmod +x /usr/local/bin/kubeseal
+  && KUBESEAL_VERSION=$(curl -fsSL https://api.github.com/repos/bitnami-labs/sealed-secrets/releases/latest | jq -r '.tag_name' | sed 's/^v//') \
+  && curl -fsSL "https://github.com/bitnami-labs/sealed-secrets/releases/download/v${KUBESEAL_VERSION}/kubeseal-${KUBESEAL_VERSION}-linux-$(dpkg --print-architecture).tar.gz" \
+       | tar -xz -C /usr/local/bin kubeseal
 RUN corepack enable
 
 FROM base AS deps
