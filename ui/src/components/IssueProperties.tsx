@@ -1,12 +1,10 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { pickTextColorForPillBg } from "@/lib/color-contrast";
 import { Link } from "@/lib/router";
 import type { Issue } from "@paperclipai/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { agentsApi } from "../api/agents";
 import { authApi } from "../api/auth";
-import { executionWorkspacesApi } from "../api/execution-workspaces";
-import { instanceSettingsApi } from "../api/instanceSettings";
 import { issuesApi } from "../api/issues";
 import { projectsApi } from "../api/projects";
 import { useCompany } from "../context/CompanyContext";
@@ -21,14 +19,8 @@ import { formatDate, cn, projectUrl } from "../lib/utils";
 import { timeAgo } from "../lib/timeAgo";
 import { Separator } from "@/components/ui/separator";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { User, Hexagon, ArrowUpRight, Tag, Plus, Trash2, Copy, Check } from "lucide-react";
+import { User, Hexagon, ArrowUpRight, Tag, Plus, Trash2 } from "lucide-react";
 import { AgentIcon } from "./AgentIconPicker";
-
-const EXECUTION_WORKSPACE_OPTIONS = [
-  { value: "shared_workspace", label: "Project default" },
-  { value: "isolated_workspace", label: "New isolated workspace" },
-  { value: "reuse_existing", label: "Reuse existing workspace" },
-] as const;
 
 function defaultProjectWorkspaceIdForProject(project: {
   workspaces?: Array<{ id: string; isPrimary: boolean }>;
@@ -46,23 +38,6 @@ function defaultExecutionWorkspaceModeForProject(project: { executionWorkspacePo
   if (defaultMode === "isolated_workspace" || defaultMode === "operator_branch") return defaultMode;
   if (defaultMode === "adapter_default") return "agent_default";
   return "shared_workspace";
-}
-
-function issueModeForExistingWorkspace(mode: string | null | undefined) {
-  if (mode === "isolated_workspace" || mode === "operator_branch" || mode === "shared_workspace") return mode;
-  if (mode === "adapter_managed" || mode === "cloud_sandbox") return "agent_default";
-  return "shared_workspace";
-}
-
-function shouldPresentExistingWorkspaceSelection(issue: Issue) {
-  const persistedMode =
-    issue.currentExecutionWorkspace?.mode
-    ?? issue.executionWorkspaceSettings?.mode
-    ?? issue.executionWorkspacePreference;
-  return Boolean(
-    issue.executionWorkspaceId &&
-    (persistedMode === "isolated_workspace" || persistedMode === "operator_branch"),
-  );
 }
 
 interface IssuePropertiesProps {
@@ -142,49 +117,6 @@ function PropertyPicker({
   );
 }
 
-/** Splits a string at `/` and `-` boundaries, inserting <wbr> for natural line breaks. */
-function BreakablePath({ text }: { text: string }) {
-  const parts: React.ReactNode[] = [];
-  // Split on path separators and hyphens, keeping them in the output
-  const segments = text.split(/(?<=[\/-])/);
-  for (let i = 0; i < segments.length; i++) {
-    if (i > 0) parts.push(<wbr key={i} />);
-    parts.push(segments[i]);
-  }
-  return <>{parts}</>;
-}
-
-/** Displays a value with a copy-to-clipboard icon and "Copied!" feedback. */
-function CopyableValue({ value, label, mono, className }: { value: string; label?: string; mono?: boolean; className?: string }) {
-  const [copied, setCopied] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const handleCopy = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(true);
-      clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(() => setCopied(false), 1500);
-    } catch { /* noop */ }
-  }, [value]);
-
-  return (
-    <div className={cn("flex items-start gap-1 group", className)}>
-      <span className="min-w-0" style={{ overflowWrap: "anywhere" }}>
-        {label && <span className="text-muted-foreground">{label} </span>}
-        <span className={mono ? "font-mono" : undefined}><BreakablePath text={value} /></span>
-      </span>
-      <button
-        type="button"
-        className="shrink-0 mt-0.5 p-0.5 rounded hover:bg-accent/50 transition-colors text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 focus:opacity-100"
-        onClick={handleCopy}
-        title={copied ? "Copied!" : "Copy to clipboard"}
-      >
-        {copied ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
-      </button>
-    </div>
-  );
-}
-
 export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProps) {
   const { selectedCompanyId } = useCompany();
   const queryClient = useQueryClient();
@@ -193,6 +125,8 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
   const [assigneeSearch, setAssigneeSearch] = useState("");
   const [projectOpen, setProjectOpen] = useState(false);
   const [projectSearch, setProjectSearch] = useState("");
+  const [blockedByOpen, setBlockedByOpen] = useState(false);
+  const [blockedBySearch, setBlockedBySearch] = useState("");
   const [labelsOpen, setLabelsOpen] = useState(false);
   const [labelSearch, setLabelSearch] = useState("");
   const [newLabelName, setNewLabelName] = useState("");
@@ -201,10 +135,6 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
   const { data: session } = useQuery({
     queryKey: queryKeys.auth.session,
     queryFn: () => authApi.getSession(),
-  });
-  const { data: experimentalSettings } = useQuery({
-    queryKey: queryKeys.instance.experimentalSettings,
-    queryFn: () => instanceSettingsApi.getExperimental(),
   });
   const currentUserId = session?.user?.id ?? session?.session?.userId;
 
@@ -233,6 +163,12 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
     queryKey: queryKeys.issues.labels(companyId!),
     queryFn: () => issuesApi.listLabels(companyId!),
     enabled: !!companyId,
+  });
+
+  const { data: allIssues } = useQuery({
+    queryKey: queryKeys.issues.list(companyId!),
+    queryFn: () => issuesApi.list(companyId!),
+    enabled: !!companyId && blockedByOpen,
   });
 
   const createLabel = useMutation({
@@ -275,48 +211,6 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
   const currentProject = issue.projectId
     ? orderedProjects.find((project) => project.id === issue.projectId) ?? null
     : null;
-  const currentProjectExecutionWorkspacePolicy =
-    experimentalSettings?.enableIsolatedWorkspaces === true
-      ? currentProject?.executionWorkspacePolicy ?? null
-      : null;
-  const currentProjectSupportsExecutionWorkspace = Boolean(currentProjectExecutionWorkspacePolicy?.enabled);
-  const { data: reusableExecutionWorkspaces } = useQuery({
-    queryKey: queryKeys.executionWorkspaces.list(companyId!, {
-      projectId: issue.projectId ?? undefined,
-      projectWorkspaceId: issue.projectWorkspaceId ?? undefined,
-      reuseEligible: true,
-    }),
-    queryFn: () =>
-      executionWorkspacesApi.list(companyId!, {
-        projectId: issue.projectId ?? undefined,
-        projectWorkspaceId: issue.projectWorkspaceId ?? undefined,
-        reuseEligible: true,
-      }),
-    enabled: Boolean(companyId) && Boolean(issue.projectId),
-  });
-  const deduplicatedReusableWorkspaces = useMemo(() => {
-    const workspaces = reusableExecutionWorkspaces ?? [];
-    const seen = new Map<string, typeof workspaces[number]>();
-    for (const ws of workspaces) {
-      const key = ws.cwd ?? ws.id;
-      const existing = seen.get(key);
-      if (!existing || new Date(ws.lastUsedAt) > new Date(existing.lastUsedAt)) {
-        seen.set(key, ws);
-      }
-    }
-    return Array.from(seen.values());
-  }, [reusableExecutionWorkspaces]);
-  const selectedReusableExecutionWorkspace =
-    deduplicatedReusableWorkspaces.find((workspace) => workspace.id === issue.executionWorkspaceId)
-    ?? issue.currentExecutionWorkspace
-    ?? null;
-  const currentExecutionWorkspaceSelection = shouldPresentExistingWorkspaceSelection(issue)
-    ? "reuse_existing"
-    : (
-        issue.executionWorkspacePreference
-        ?? issue.executionWorkspaceSettings?.mode
-        ?? defaultExecutionWorkspaceModeForProject(currentProject)
-      );
   const projectLink = (id: string | null) => {
     if (!id) return null;
     const project = projects?.find((p) => p.id === id) ?? null;
@@ -602,6 +496,88 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
     </>
   );
 
+  const blockedByIds = issue.blockedBy?.map((relation) => relation.id) ?? [];
+  const blockedByTrigger = blockedByIds.length > 0 ? (
+    <div className="flex items-center gap-1 flex-wrap min-w-0">
+      {(issue.blockedBy ?? []).slice(0, 2).map((relation) => (
+        <span key={relation.id} className="inline-flex max-w-full items-center rounded-full border border-border px-2 py-0.5 text-xs">
+          <span className="truncate">{relation.identifier ?? relation.title}</span>
+        </span>
+      ))}
+      {(issue.blockedBy ?? []).length > 2 && (
+        <span className="text-xs text-muted-foreground">+{(issue.blockedBy ?? []).length - 2}</span>
+      )}
+    </div>
+  ) : (
+    <span className="text-sm text-muted-foreground">No blockers</span>
+  );
+
+  const blockingIssues = issue.blocks ?? [];
+  const blockerOptions = (allIssues ?? [])
+    .filter((candidate) => candidate.id !== issue.id)
+    .filter((candidate) => {
+      if (!blockedBySearch.trim()) return true;
+      const query = blockedBySearch.toLowerCase();
+      return (
+        (candidate.identifier ?? "").toLowerCase().includes(query) ||
+        candidate.title.toLowerCase().includes(query)
+      );
+    })
+    .sort((a, b) => {
+      const aLabel = `${a.identifier ?? ""} ${a.title}`.trim();
+      const bLabel = `${b.identifier ?? ""} ${b.title}`.trim();
+      return aLabel.localeCompare(bLabel);
+    });
+
+  const toggleBlockedBy = (blockedByIssueId: string) => {
+    const nextBlockedByIds = blockedByIds.includes(blockedByIssueId)
+      ? blockedByIds.filter((candidate) => candidate !== blockedByIssueId)
+      : [...blockedByIds, blockedByIssueId];
+    onUpdate({ blockedByIssueIds: nextBlockedByIds });
+  };
+
+  const blockedByContent = (
+    <>
+      <input
+        className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
+        placeholder="Search issues..."
+        value={blockedBySearch}
+        onChange={(e) => setBlockedBySearch(e.target.value)}
+        autoFocus={!inline}
+      />
+      <div className="max-h-48 overflow-y-auto overscroll-contain">
+        <button
+          className={cn(
+            "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+            blockedByIds.length === 0 && "bg-accent",
+          )}
+          onClick={() => onUpdate({ blockedByIssueIds: [] })}
+        >
+          No blockers
+        </button>
+        {blockerOptions.map((candidate) => {
+          const selected = blockedByIds.includes(candidate.id);
+          return (
+            <button
+              key={candidate.id}
+              className={cn(
+                "flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs rounded hover:bg-accent/50",
+                selected && "bg-accent",
+              )}
+              onClick={() => toggleBlockedBy(candidate.id)}
+            >
+              <StatusIcon status={candidate.status} />
+              <span className="truncate">
+                {candidate.identifier ? `${candidate.identifier} ` : ""}
+                {candidate.title}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </>
+  );
+
   return (
     <div className="space-y-4">
       <div className="space-y-1">
@@ -674,92 +650,38 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
           {projectContent}
         </PropertyPicker>
 
-        {currentProjectSupportsExecutionWorkspace && (
-          <PropertyRow label="Workspace">
-            <div className="w-full space-y-2">
-              <select
-                className="w-full rounded border border-border bg-transparent px-2 py-1.5 text-xs outline-none"
-                value={currentExecutionWorkspaceSelection}
-                onChange={(e) => {
-                  const nextMode = e.target.value;
-                  onUpdate({
-                    executionWorkspacePreference: nextMode,
-                    executionWorkspaceId: nextMode === "reuse_existing" ? issue.executionWorkspaceId : null,
-                    executionWorkspaceSettings: {
-                      mode:
-                        nextMode === "reuse_existing"
-                          ? issueModeForExistingWorkspace(selectedReusableExecutionWorkspace?.mode)
-                          : nextMode,
-                    },
-                  });
-                }}
-              >
-                {EXECUTION_WORKSPACE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.value === "reuse_existing" && selectedReusableExecutionWorkspace?.mode === "isolated_workspace"
-                      ? "Existing isolated workspace"
-                      : option.label}
-                  </option>
-                ))}
-              </select>
+        <PropertyPicker
+          inline={inline}
+          label="Blocked by"
+          open={blockedByOpen}
+          onOpenChange={(open) => {
+            setBlockedByOpen(open);
+            if (!open) setBlockedBySearch("");
+          }}
+          triggerContent={blockedByTrigger}
+          triggerClassName="min-w-0 max-w-full"
+          popoverClassName="w-72"
+        >
+          {blockedByContent}
+        </PropertyPicker>
 
-              {currentExecutionWorkspaceSelection === "reuse_existing" && (
-                <select
-                  className="w-full rounded border border-border bg-transparent px-2 py-1.5 text-xs outline-none"
-                  value={issue.executionWorkspaceId ?? ""}
-                  onChange={(e) => {
-                    const nextExecutionWorkspaceId = e.target.value || null;
-                    const nextExecutionWorkspace = deduplicatedReusableWorkspaces.find(
-                      (workspace) => workspace.id === nextExecutionWorkspaceId,
-                    );
-                    onUpdate({
-                      executionWorkspacePreference: "reuse_existing",
-                      executionWorkspaceId: nextExecutionWorkspaceId,
-                      executionWorkspaceSettings: {
-                        mode: issueModeForExistingWorkspace(nextExecutionWorkspace?.mode),
-                      },
-                    });
-                  }}
+        <PropertyRow label="Blocking">
+          {blockingIssues.length > 0 ? (
+            <div className="flex flex-wrap gap-1">
+              {blockingIssues.map((relation) => (
+                <Link
+                  key={relation.id}
+                  to={`/issues/${relation.identifier ?? relation.id}`}
+                  className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-xs hover:bg-accent/50"
                 >
-                  <option value="">Choose an existing workspace</option>
-                  {deduplicatedReusableWorkspaces.map((workspace) => (
-                    <option key={workspace.id} value={workspace.id}>
-                      {workspace.name} · {workspace.status} · {workspace.branchName ?? workspace.cwd ?? workspace.id.slice(0, 8)}
-                    </option>
-                  ))}
-                </select>
-              )}
-
-              {issue.currentExecutionWorkspace && (
-                <div className="text-[11px] text-muted-foreground space-y-0.5">
-                  <div style={{ overflowWrap: "anywhere" }}>
-                    Current:{" "}
-                    <Link
-                      to={`/execution-workspaces/${issue.currentExecutionWorkspace.id}`}
-                      className="hover:text-foreground hover:underline"
-                    >
-                      <BreakablePath text={issue.currentExecutionWorkspace.name} />
-                    </Link>
-                    {" · "}
-                    {issue.currentExecutionWorkspace.status}
-                  </div>
-                  {issue.currentExecutionWorkspace.cwd && (
-                    <CopyableValue value={issue.currentExecutionWorkspace.cwd} mono className="text-[11px]" />
-                  )}
-                  {issue.currentExecutionWorkspace.branchName && (
-                    <CopyableValue value={issue.currentExecutionWorkspace.branchName} label="Branch:" className="text-[11px]" />
-                  )}
-                  {issue.currentExecutionWorkspace.repoUrl && (
-                    <CopyableValue value={issue.currentExecutionWorkspace.repoUrl} label="Repo:" mono className="text-[11px]" />
-                  )}
-                </div>
-              )}
-              {!issue.currentExecutionWorkspace && currentProject?.primaryWorkspace?.cwd && (
-                <CopyableValue value={currentProject.primaryWorkspace.cwd} mono className="text-[11px] text-muted-foreground" />
-              )}
+                  {relation.identifier ?? relation.title}
+                </Link>
+              ))}
             </div>
-          </PropertyRow>
-        )}
+          ) : (
+            <span className="text-sm text-muted-foreground">None</span>
+          )}
+        </PropertyRow>
 
         {issue.parentId && (
           <PropertyRow label="Parent">
@@ -771,7 +693,6 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
             </Link>
           </PropertyRow>
         )}
-
         {issue.requestDepth > 0 && (
           <PropertyRow label="Depth">
             <span className="text-sm font-mono">{issue.requestDepth}</span>
