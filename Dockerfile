@@ -7,15 +7,15 @@ RUN apt-get update \
   && curl -fsSL https://github.com/cli/cli/releases/download/v2.89.0/gh_2.89.0_linux_amd64.tar.gz | tar -xzf - -C /tmp \
   && mv /tmp/gh_2.89.0_linux_amd64/bin/gh /usr/local/bin/ \
   && rm -rf /tmp/gh_* \
-  && curl -fsSL "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/linux/$(dpkg --print-architecture)/kubectl" \
+  && curl -fsSL "https://dl.k8s.io/release/v1.32.0/bin/linux/amd64/kubectl" \
        -o /usr/local/bin/kubectl \
   && chmod +x /usr/local/bin/kubectl \
   && curl -LsSf https://astral.sh/uv/install.sh | sh \
   && mv /root/.local/bin/uv /usr/local/bin/uv \
   && mv /root/.local/bin/uvx /usr/local/bin/uvx \
-  && curl -fsSL "https://github.com/bitnami-labs/sealed-secrets/releases/latest/download/kubeseal-$(uname -s | tr '[:upper:]' '[:lower:]')-$(dpkg --print-architecture)" \
-       -o /usr/local/bin/kubeseal \
-  && chmod +x /usr/local/bin/kubeseal
+  && curl -fsSL "https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.36.6/kubeseal-0.36.6-linux-amd64.tar.gz" | tar -xzf - -C /tmp \
+  && mv /tmp/kubeseal /usr/local/bin/kubeseal \
+  && rm -rf /tmp/kubeseal /tmp/LICENSE /tmp/README.md \
 
 # Modify the existing node user/group to have the specified UID/GID to match host user
 RUN usermod -u $USER_UID --non-unique node \
