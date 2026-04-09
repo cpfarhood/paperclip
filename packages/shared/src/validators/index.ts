@@ -75,6 +75,7 @@ export {
   type CompanySkillProjectScan,
   type CompanySkillCreate,
   type CompanySkillFileUpdate,
+  type CompanySkillUpdateAuth,
 } from "./company-skill.js";
 export {
   agentSkillStateSchema,

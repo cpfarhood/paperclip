@@ -2480,7 +2480,7 @@ export function companySkillService(db: Db) {
         await db
           .update(companySkills)
           .set({ metadata: meta, updatedAt: new Date() })
-          .where(eq(companySkills.id, skill.id));
+          .where(and(eq(companySkills.id, skill.id), eq(companySkills.companyId, companyId)));
       }
     }
 
