@@ -4,8 +4,8 @@ ARG USER_GID=1000
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl git jq nano procps python3 python3-pip vim \
   && rm -rf /var/lib/apt/lists/* \
-  && curl -fsSL https://github.com/cli/cli/releases/download/v2.67.2/gh_2.67.2_linux_amd64.tar.gz | tar -xzf - -C /tmp \
-  && mv /tmp/gh_2.67.2_linux_amd64/bin/gh /usr/local/bin/ \
+  && curl -fsSL https://github.com/cli/cli/releases/download/v2.89.0/gh_2.89.0_linux_amd64.tar.gz | tar -xzf - -C /tmp \
+  && mv /tmp/gh_2.89.0_linux_amd64/bin/gh /usr/local/bin/ \
   && rm -rf /tmp/gh_* \
   && curl -fsSL "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/linux/$(dpkg --print-architecture)/kubectl" \
        -o /usr/local/bin/kubectl \
