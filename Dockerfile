@@ -2,7 +2,7 @@ FROM node:lts-trixie-slim AS base
 ARG USER_UID=1000
 ARG USER_GID=1000
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl git jq nano procps python3 python3-pip vim \
+  && apt-get install -y --no-install-recommends ca-certificates curl git jq nano procps python3 python3-pip vim passwd \
   && rm -rf /var/lib/apt/lists/* \
   && curl -fsSL https://github.com/cli/cli/releases/download/v2.89.0/gh_2.89.0_linux_amd64.tar.gz | tar -xzf - -C /tmp \
   && mv /tmp/gh_2.89.0_linux_amd64/bin/gh /usr/local/bin/ \
