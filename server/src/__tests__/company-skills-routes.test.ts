@@ -118,6 +118,11 @@ describe("company skill mutation permissions", () => {
       imported: [],
       warnings: [],
     });
+    expect(mockCompanySkillService.importFromSource).toHaveBeenCalledWith(
+      "company-1",
+      "https://github.com/vercel-labs/agent-browser",
+      undefined,
+    );
   });
 
   it("tracks public GitHub skill imports with an explicit skill reference", async () => {
@@ -294,6 +299,7 @@ describe("company skill mutation permissions", () => {
     expect(mockCompanySkillService.importFromSource).toHaveBeenCalledWith(
       "company-1",
       "https://github.com/vercel-labs/agent-browser",
+      undefined,
     );
   });
 

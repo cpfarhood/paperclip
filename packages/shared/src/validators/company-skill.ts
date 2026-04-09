@@ -68,6 +68,11 @@ export const companySkillUpdateStatusSchema = z.object({
 
 export const companySkillImportSchema = z.object({
   source: z.string().min(1),
+  authToken: z.string().min(1).optional(),
+});
+
+export const companySkillUpdateAuthSchema = z.object({
+  authToken: z.string().min(1).nullable(),
 });
 
 export const companySkillProjectScanRequestSchema = z.object({
