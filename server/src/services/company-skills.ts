@@ -2485,6 +2485,17 @@ export function companySkillService(db: Db) {
     // Clean up materialized runtime files
     await fs.rm(resolveRuntimeSkillMaterializedPath(companyId, skill), { recursive: true, force: true });
 
+    // Delete associated PAT secret if present
+    const meta = skill.metadata as Record<string, unknown> | null;
+    const secretId = typeof meta?.sourceAuthSecretId === "string" ? meta.sourceAuthSecretId : null;
+    if (secretId) {
+      try {
+        await secretsSvc.remove(secretId);
+      } catch {
+        // Best-effort: don't fail the skill deletion if secret cleanup fails
+      }
+    }
+
     return skill;
   }
 
@@ -2541,6 +2552,28 @@ export function companySkillService(db: Db) {
       .from(companySkills)
       .where(and(eq(companySkills.companyId, companyId), eq(companySkills.sourceLocator, sourceLocator)));
     if (rows.length === 0) return [];
+
+    // Pre-check all skills for agent usage before deleting any (atomicity)
+    const skills = rows.map(toCompanySkill);
+    for (const skill of skills) {
+      const usedByAgents = await usage(companyId, skill.key);
+      if (usedByAgents.length > 0) {
+        const agentNames = usedByAgents.map((agent) => agent.name).sort((left, right) => left.localeCompare(right));
+        throw unprocessable(
+          `Cannot delete skills from "${sourceLocator}" because skill "${skill.name}" is still used by ${agentNames.join(", ")}. Detach it from those agents first.`,
+          {
+            skillId: skill.id,
+            skillKey: skill.key,
+            usedByAgents: usedByAgents.map((agent) => ({
+              id: agent.id,
+              name: agent.name,
+              urlKey: agent.urlKey,
+              adapterType: agent.adapterType,
+            })),
+          },
+        );
+      }
+    }
 
     const deleted: CompanySkill[] = [];
     for (const row of rows) {
