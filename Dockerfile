@@ -2,16 +2,11 @@ FROM node:lts-trixie-slim AS base
 ARG USER_UID=1000
 ARG USER_GID=1000
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl git jq nano procps python3 python3-pip vim wget \
-  && mkdir -p -m 755 /etc/apt/keyrings \
-  && wget -nv -O/etc/apt/keyrings/githubcli-archive-keyring.gpg https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-  && echo "6084d5d7bd8e288441e0e94fc6275570895da18e6751f70f057485dc2d1a811b  /etc/apt/keyrings/githubcli-archive-keyring.gpg" | sha256sum -c - \
-  && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
-  && mkdir -p -m 755 /etc/apt/sources.list.d \
-  && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \
-  && apt-get update \
-  && apt-get install -y --no-install-recommends gh \
+  && apt-get install -y --no-install-recommends ca-certificates curl git jq nano procps python3 python3-pip vim \
   && rm -rf /var/lib/apt/lists/* \
+  && curl -fsSL https://github.com/cli/cli/releases/download/v2.67.2/gh_2.67.2_linux_amd64.tar.gz | tar -xzf - -C /tmp \
+  && mv /tmp/gh_2.67.2_linux_amd64/bin/gh /usr/local/bin/ \
+  && rm -rf /tmp/gh_* \
   && curl -fsSL "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/linux/$(dpkg --print-architecture)/kubectl" \
        -o /usr/local/bin/kubectl \
   && chmod +x /usr/local/bin/kubectl \
