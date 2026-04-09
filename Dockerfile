@@ -2,31 +2,26 @@ FROM node:lts-trixie-slim AS base
 ARG USER_UID=1000
 ARG USER_GID=1000
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl git jq nano procps python3 python3-pip vim passwd \
+  && apt-get install -y --no-install-recommends ca-certificates gosu curl git wget ripgrep python3 \
+  && mkdir -p -m 755 /etc/apt/keyrings \
+  && wget -nv -O/etc/apt/keyrings/githubcli-archive-keyring.gpg https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+  && echo "20e0125d6f6e077a9ad46f03371bc26d90b04939fb95170f5a1905099cc6bcc0  /etc/apt/keyrings/githubcli-archive-keyring.gpg" | sha256sum -c - \
+  && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+  && mkdir -p -m 755 /etc/apt/sources.list.d \
+  && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends gh \
   && rm -rf /var/lib/apt/lists/* \
-  && curl -fsSL https://github.com/cli/cli/releases/download/v2.89.0/gh_2.89.0_linux_amd64.tar.gz | tar -xzf - -C /tmp \
-  && mv /tmp/gh_2.89.0_linux_amd64/bin/gh /usr/local/bin/ \
-  && rm -rf /tmp/gh_* \
-  && curl -fsSL "https://dl.k8s.io/release/v1.32.0/bin/linux/amd64/kubectl" \
-       -o /usr/local/bin/kubectl \
-  && chmod +x /usr/local/bin/kubectl \
-  && curl -LsSf https://astral.sh/uv/install.sh | sh \
-  && mv /root/.local/bin/uv /usr/local/bin/uv \
-  && mv /root/.local/bin/uvx /usr/local/bin/uvx \
-  && curl -fsSL "https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.36.6/kubeseal-0.36.6-linux-amd64.tar.gz" | tar -xzf - -C /tmp \
-  && mv /tmp/kubeseal /usr/local/bin/kubeseal \
-  && rm -rf /tmp/kubeseal /tmp/LICENSE /tmp/README.md \
+  && corepack enable
 
 # Modify the existing node user/group to have the specified UID/GID to match host user
 RUN usermod -u $USER_UID --non-unique node \
   && groupmod -g $USER_GID --non-unique node \
   && usermod -g $USER_GID -d /paperclip node
 
-RUN corepack enable
-
 FROM base AS deps
 WORKDIR /app
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml* .npmrc ./
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc ./
 COPY cli/package.json cli/
 COPY server/package.json server/
 COPY ui/package.json ui/
@@ -44,7 +39,7 @@ COPY packages/adapters/pi-local/package.json packages/adapters/pi-local/
 COPY packages/plugins/sdk/package.json packages/plugins/sdk/
 COPY patches/ patches/
 
-RUN pnpm install --no-frozen-lockfile
+RUN pnpm install --frozen-lockfile
 
 FROM base AS build
 WORKDIR /app
@@ -60,11 +55,9 @@ ARG USER_UID=1000
 ARG USER_GID=1000
 WORKDIR /app
 COPY --chown=node:node --from=build /app /app
-RUN npm install --global --omit=dev @anthropic-ai/claude-code@latest @openai/codex@latest opencode-ai @google/gemini-cli \
-  && mkdir -p /paperclip/.config/opencode \
-  && cd /paperclip/.config/opencode \
-  && npm install @ai-sdk/anthropic \
-  && chown -R node:node /paperclip
+RUN npm install --global --omit=dev @anthropic-ai/claude-code@latest @openai/codex@latest opencode-ai \
+  && mkdir -p /paperclip \
+  && chown node:node /paperclip
 
 COPY scripts/docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
