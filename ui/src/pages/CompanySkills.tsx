@@ -890,6 +890,7 @@ export function CompanySkills() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteTargetSkillId, setDeleteTargetSkillId] = useState<string | null>(null);
   const [deleteTargetDetail, setDeleteTargetDetail] = useState<CompanySkillDetail | null>(null);
+  const [deleteTargetSourceLocator, setDeleteTargetSourceLocator] = useState<string | null>(null);
   const parsedRoute = useMemo(() => parseSkillRoute(routePath), [routePath]);
   const routeSkillId = parsedRoute.skillId;
   const selectedPath = parsedRoute.filePath;
@@ -998,12 +999,16 @@ export function CompanySkills() {
     if (!open) {
       setDeleteTargetSkillId(null);
       setDeleteTargetDetail(null);
+      setDeleteTargetSourceLocator(null);
     }
   }
 
   function handleDeleteSkill(sourceLocator?: string | null) {
     if (sourceLocator) {
-      deleteSkill.mutate(sourceLocator);
+      setDeleteTargetSourceLocator(sourceLocator);
+      setDeleteTargetSkillId(null);
+      setDeleteTargetDetail(null);
+      setDeleteOpen(true);
     } else {
       openDeleteDialog();
     }
@@ -1212,30 +1217,40 @@ export function CompanySkills() {
       <Dialog open={deleteOpen} onOpenChange={closeDeleteDialog}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Remove skill</DialogTitle>
+            <DialogTitle>{deleteTargetSourceLocator ? "Remove skills from source" : "Remove skill"}</DialogTitle>
             <DialogDescription>
-              Remove this skill from the company library. If any agents still use it, removal will be blocked until it is detached.
+              {deleteTargetSourceLocator
+                ? `All skills imported from this source will be permanently removed from the company library.`
+                : "Remove this skill from the company library. If any agents still use it, removal will be blocked until it is detached."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 text-sm">
-            <p>
-              {deleteTargetDetail
-                ? `You are about to remove ${deleteTargetDetail.name}.`
-                : "You are about to remove this skill."}
-            </p>
-            {deleteTargetDetail?.usedByAgents?.length ? (
-              <div className="rounded-md border border-border px-3 py-3 text-muted-foreground">
-                Currently used by {deleteTargetDetail.usedByAgents.map((agent) => agent.name).join(", ")}.
-              </div>
-            ) : null}
-            {(deleteTargetDetail?.usedByAgents.length ?? 0) > 0 ? (
-              <p className="text-muted-foreground">
-                Detach this skill from all agents to enable removal.
+            {deleteTargetSourceLocator ? (
+              <p className="rounded-md border border-destructive/50 bg-destructive/5 px-3 py-2 font-mono text-xs break-all">
+                {deleteTargetSourceLocator}
               </p>
-            ) : null}
+            ) : (
+              <>
+                <p>
+                  {deleteTargetDetail
+                    ? `You are about to remove ${deleteTargetDetail.name}.`
+                    : "You are about to remove this skill."}
+                </p>
+                {deleteTargetDetail?.usedByAgents?.length ? (
+                  <div className="rounded-md border border-border px-3 py-3 text-muted-foreground">
+                    Currently used by {deleteTargetDetail.usedByAgents.map((agent) => agent.name).join(", ")}.
+                  </div>
+                ) : null}
+                {(deleteTargetDetail?.usedByAgents.length ?? 0) > 0 ? (
+                  <p className="text-muted-foreground">
+                    Detach this skill from all agents to enable removal.
+                  </p>
+                ) : null}
+              </>
+            )}
           </div>
           <DialogFooter>
-            {(deleteTargetDetail?.usedByAgents.length ?? 0) > 0 ? (
+            {(deleteTargetDetail?.usedByAgents.length ?? 0) > 0 && !deleteTargetSourceLocator ? (
               <Button variant="ghost" onClick={() => closeDeleteDialog(false)}>
                 Close
               </Button>
@@ -1246,10 +1261,10 @@ export function CompanySkills() {
                 </Button>
                 <Button
                   variant="destructive"
-                  onClick={() => deleteSkill.mutate(undefined)}
-                  disabled={deleteSkill.isPending || !deleteTargetSkillId}
+                  onClick={() => deleteSkill.mutate(deleteTargetSourceLocator ?? undefined)}
+                  disabled={deleteSkill.isPending || (!deleteTargetSkillId && !deleteTargetSourceLocator)}
                 >
-                  {deleteSkill.isPending ? "Removing..." : "Remove skill"}
+                  {deleteSkill.isPending ? "Removing..." : deleteTargetSourceLocator ? "Remove all from source" : "Remove skill"}
                 </Button>
               </>
             )}
