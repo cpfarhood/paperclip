@@ -2445,9 +2445,15 @@ export function companySkillService(db: Db) {
       }
       meta.sourceAuthSecretId = secretId;
     } else {
-      // Clear the PAT
+      // Clear the PAT — delete the secret row to avoid orphaned secrets
+      if (existingSecretId) {
+        try {
+          await secretsSvc.remove(existingSecretId);
+        } catch {
+          // Best-effort: don't fail the metadata update if secret deletion fails
+        }
+      }
       delete meta.sourceAuthSecretId;
-      // Note: we don't delete the secret itself — it may be referenced in audit logs
     }
 
     const [updated] = await db
