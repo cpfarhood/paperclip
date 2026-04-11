@@ -2046,14 +2046,16 @@ export function companySkillService(db: Db) {
           if (usedByAgents.length > 0) {
             // Detach the skill from all agents that have it, then delete
             for (const agent of usedByAgents) {
-              const currentConfig = (agent.adapterConfig ?? {}) as Record<string, unknown>;
+              const fullAgent = await agents.getById(agent.id);
+              if (!fullAgent) continue;
+              const currentConfig = (fullAgent.adapterConfig ?? {}) as Record<string, unknown>;
               const preference = readPaperclipSkillSyncPreference(currentConfig);
               if (preference.desiredSkills.includes(skill.key)) {
                 const updatedConfig = writePaperclipSkillSyncPreference(
                   currentConfig,
                   preference.desiredSkills.filter((k) => k !== skill.key),
                 );
-                await agents.updateAgent(agent.id, { adapterConfig: updatedConfig });
+                await agents.update(fullAgent.id, { adapterConfig: updatedConfig });
               }
             }
             warnings.push(
