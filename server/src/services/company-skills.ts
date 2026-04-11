@@ -2111,6 +2111,34 @@ export function companySkillService(db: Db) {
       }
     }
 
+    // Re-scan GitHub/sks_sh sources to pick up newly added skills
+    const existingSkills = await listFull(companyId);
+    const sourceByLocator = new Map<string, CompanySkill[]>();
+    for (const skill of existingSkills) {
+      if (skill.sourceType !== "github" && skill.sourceType !== "skills_sh") continue;
+      const locator = skill.sourceLocator ?? "";
+      if (!locator) continue;
+      if (!sourceByLocator.has(locator)) sourceByLocator.set(locator, []);
+      sourceByLocator.get(locator)!.push(skill);
+    }
+    for (const [sourceLocator, skillsAtSource] of sourceByLocator) {
+      try {
+        const result = await readUrlSkillImports(companyId, sourceLocator, null);
+        for (const nextSkill of result.skills) {
+          const existing = skillsAtSource.find((s) => s.slug === nextSkill.slug);
+          if (!existing) {
+            // New skill discovered — derive key and upsert
+            nextSkill.key = deriveCanonicalSkillKey(companyId, nextSkill);
+            const persisted = (await upsertImportedSkills(companyId, [nextSkill]))[0];
+            if (persisted) imported.push(persisted);
+          }
+        }
+      } catch {
+        // Best-effort: don't fail the whole scan if one source fails
+        warnings.push(`Could not re-scan source ${sourceLocator} — skipping.`);
+      }
+    }
+
     return {
       scannedProjects: scannedProjectIds.size,
       scannedWorkspaces: scanTargets.length,
