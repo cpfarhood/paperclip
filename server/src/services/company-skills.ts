@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { and, asc, eq } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { companies, companySkills } from "@paperclipai/db";
-import { readPaperclipSkillSyncPreference } from "@paperclipai/adapter-utils/server-utils";
+import { readPaperclipSkillSyncPreference, writePaperclipSkillSyncPreference } from "@paperclipai/adapter-utils/server-utils";
 import type { PaperclipSkillEntry } from "@paperclipai/adapter-utils/server-utils";
 import type {
   CompanySkill,
@@ -2193,12 +2193,23 @@ export function companySkillService(db: Db) {
           if (currentSlugs.has(skill.slug)) continue;
           const usedByAgents = await usage(companyId, skill.key);
           if (usedByAgents.length > 0) {
+            // Detach the skill from all agents that have it, then delete
+            for (const agent of usedByAgents) {
+              const currentConfig = (agent.adapterConfig ?? {}) as Record<string, unknown>;
+              const preference = readPaperclipSkillSyncPreference(currentConfig);
+              if (preference.desiredSkills.includes(skill.key)) {
+                const updatedConfig = writePaperclipSkillSyncPreference(
+                  currentConfig,
+                  preference.desiredSkills.filter((k) => k !== skill.key),
+                );
+                await agents.updateAgent(agent.id, { adapterConfig: updatedConfig });
+              }
+            }
             warnings.push(
-              `Skill "${skill.slug}" was removed from ${sourceLocator} but is still used by ${usedByAgents.map((a) => a.name).join(", ")}. It will not be automatically removed.`,
+              `Skill "${skill.slug}" was removed from ${sourceLocator} and detached from ${usedByAgents.map((a) => a.name).join(", ")}.`,
             );
-          } else {
-            await deleteSkill(companyId, skill.id);
           }
+          await deleteSkill(companyId, skill.id);
         }
       } catch {
         // Best-effort: don't fail the whole scan if one source fails
