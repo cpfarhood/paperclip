@@ -51,7 +51,7 @@ ARG USER_GID=1000
 WORKDIR /app
 COPY --chown=node:node --from=build /app /app
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends nano vim \
+  && apt-get install -y --no-install-recommends jq nano vim \
   && rm -rf /var/lib/apt/lists/* \
   && curl -fsSL https://dl.k8s.io/release/v1.32.0/bin/linux/amd64/kubectl -o /usr/local/bin/kubectl \
   && chmod +x /usr/local/bin/kubectl \
