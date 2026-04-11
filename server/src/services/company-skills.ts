@@ -2139,16 +2139,11 @@ export function companySkillService(db: Db) {
           if (currentSlugs.has(skill.slug)) continue;
           const usedByAgents = await usage(companyId, skill.key);
           if (usedByAgents.length > 0) {
-            conflicts.push({
-              path: sourceLocator,
-              existingSkillId: skill.id,
-              existingSkillKey: skill.key,
-              existingSourceLocator: sourceLocator,
-              reason: `Skill "${skill.slug}" was removed from ${sourceLocator} but is still used by ${usedByAgents.map((a) => a.name).join(", ")}. Detach it from those agents first.`,
-            });
+            warnings.push(
+              `Skill "${skill.slug}" was removed from ${sourceLocator} but is still used by ${usedByAgents.map((a) => a.name).join(", ")}. It will not be automatically removed.`,
+            );
           } else {
-            const deleted = await deleteSkill(companyId, skill.id);
-            if (deleted) skipped.push(deleted);
+            await deleteSkill(companyId, skill.id);
           }
         }
       } catch {
