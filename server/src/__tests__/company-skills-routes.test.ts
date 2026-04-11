@@ -106,6 +106,7 @@ describe("company skill mutation permissions", () => {
       discovered: [],
       imported: [],
       updated: [],
+      skipped: [],
       conflicts: [],
       warnings: [],
     });
@@ -309,6 +310,53 @@ describe("company skill mutation permissions", () => {
 
     expect(res.status, JSON.stringify(res.body)).toBe(200);
     expect(mockCompanySkillService.scanProjectWorkspaces).toHaveBeenCalledWith("company-1", {});
+  });
+
+  it("returns skipped and conflicts from scan including pruned skill conflicts", async () => {
+    mockAgentService.getById.mockResolvedValue({
+      id: "agent-1",
+      companyId: "company-1",
+      permissions: { canCreateAgents: true },
+    });
+
+    const skippedSkill = { id: "skill-1", slug: "removed-skill", name: "Removed Skill" };
+    const conflictEntry = {
+      path: "https://github.com/vercel-labs/agent-browser",
+      existingSkillId: "skill-2",
+      existingSkillKey: "vercel-labs/agent-browser/ghost-skill",
+      existingSourceLocator: "https://github.com/vercel-labs/agent-browser",
+      reason: 'Skill "ghost-skill" was removed from https://github.com/vercel-labs/agent-browser but is still used by Builder. Detach it from those agents first.',
+    };
+
+    mockCompanySkillService.scanProjectWorkspaces.mockResolvedValueOnce({
+      scannedProjects: 1,
+      scannedWorkspaces: 1,
+      discovered: [],
+      imported: [],
+      updated: [],
+      skipped: [skippedSkill],
+      conflicts: [conflictEntry],
+      warnings: [],
+    });
+
+    const res = await request(await createApp({
+      type: "agent",
+      agentId: "agent-1",
+      companyId: "company-1",
+      runId: "run-1",
+    }))
+      .post("/api/companies/company-1/skills/scan-projects")
+      .send({});
+
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(res.body).toMatchObject({
+      skipped: [{ id: "skill-1", slug: "removed-skill" }],
+      conflicts: [{
+        path: "https://github.com/vercel-labs/agent-browser",
+        existingSkillId: "skill-2",
+        reason: expect.stringContaining("was removed from"),
+      }],
+    });
   });
 
   it("allows agents with canCreateAgents to mutate company skills", async () => {
