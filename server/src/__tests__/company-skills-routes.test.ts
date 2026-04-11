@@ -294,7 +294,7 @@ describe("company skill mutation permissions", () => {
       skipped: [],
       conflicts: [],
       warnings: [
-        'Skill "ghost-skill" was removed from https://github.com/vercel-labs/agent-browser but is still used by Builder. It will not be automatically removed.',
+        'Skill "ghost-skill" was removed from https://github.com/vercel-labs/agent-browser and detached from Builder.',
       ],
     });
 
