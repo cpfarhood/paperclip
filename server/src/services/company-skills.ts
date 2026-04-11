@@ -2016,7 +2016,7 @@ export function companySkillService(db: Db) {
       }
     }
 
-    // Re-scan GitHub/sks_sh sources to pick up newly added skills
+    // Re-scan GitHub/sks_sh sources to pick up newly added skills and prune removed ones
     const sourceLocators = new Set<string>();
     for (const skill of acceptedSkills) {
       if (skill.sourceType !== "github" && skill.sourceType !== "skills_sh") continue;
@@ -2026,12 +2026,34 @@ export function companySkillService(db: Db) {
     for (const sourceLocator of sourceLocators) {
       try {
         const result = await readUrlSkillImports(companyId, sourceLocator, null);
+        const currentSlugs = new Set(result.skills.map((s) => s.slug));
+
+        // Upsert any new skills found in the source
         for (const nextSkill of result.skills) {
           if (acceptedSkills.some((s) => s.slug === nextSkill.slug)) continue;
           const persisted = (await upsertImportedSkills(companyId, [nextSkill]))[0];
           if (persisted) {
             imported.push(persisted);
             upsertAcceptedSkill(persisted);
+          }
+        }
+
+        // Prune skills that are no longer in the source
+        const skillsAtSource = acceptedSkills.filter((s) => s.sourceLocator === sourceLocator);
+        for (const skill of skillsAtSource) {
+          if (currentSlugs.has(skill.slug)) continue;
+          const usedByAgents = await usage(companyId, skill.key);
+          if (usedByAgents.length > 0) {
+            conflicts.push({
+              path: sourceLocator,
+              existingSkillId: skill.id,
+              existingSkillKey: skill.key,
+              existingSourceLocator: sourceLocator,
+              reason: `Skill "${skill.slug}" was removed from ${sourceLocator} but is still used by ${usedByAgents.map((a) => a.name).join(", ")}. Detach it from those agents first.`,
+            });
+          } else {
+            const deleted = await deleteSkill(companyId, skill.id);
+            if (deleted) skipped.push(deleted);
           }
         }
       } catch {
