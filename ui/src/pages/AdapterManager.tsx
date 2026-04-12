@@ -496,7 +496,7 @@ export function AdapterManager() {
               <Button
                 onClick={() =>
                   installMutation.mutate({
-                    packageName: installPackage,
+                    packageName: installPackage.trim(),
                     version: installVersion || undefined,
                     isLocalPath,
                   })
