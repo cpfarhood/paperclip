@@ -2,6 +2,21 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("hermes-paperclip-adapter/server", () => ({
+  execute: vi.fn(),
+  testEnvironment: vi.fn(),
+  sessionCodec: vi.fn(),
+  listSkills: vi.fn(async () => []),
+  syncSkills: vi.fn(async () => []),
+  detectModel: vi.fn(),
+}));
+
+vi.mock("hermes-paperclip-adapter", () => ({
+  agentConfigurationDoc: vi.fn(),
+  models: [],
+}));
+
 import { withAdapterMutex } from "../routes/adapters.js";
 
 // ---------------------------------------------------------------------------

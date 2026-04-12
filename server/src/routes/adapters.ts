@@ -232,7 +232,7 @@ export function adapterRoutes() {
     // Strip version suffix if the UI sends "pkg@1.2.3" instead of separating it
     // e.g. "@henkey/hermes-paperclip-adapter@0.3.0" → packageName + version
     let canonicalName = packageName.trim();
-    let explicitVersion = version;
+    let explicitVersion = typeof version === "string" ? version.trim() : version;
     const versionSuffix = packageName.match(/@(\d+\.\d+\.\d+.*)$/);
     if (versionSuffix) {
       // For scoped packages: "@scope/name@1.2.3" → "@scope/name" + "1.2.3"
@@ -264,8 +264,7 @@ export function adapterRoutes() {
           // Read installed version from package.json
           try {
             const pkgJsonPath = path.join(pluginsDir, "node_modules", canonicalName, "package.json");
-            const pkgContent = await import("node:fs/promises");
-            const pkgRaw = await pkgContent.readFile(pkgJsonPath, "utf-8");
+            const pkgRaw = await readFile(pkgJsonPath, "utf-8");
             const pkg = JSON.parse(pkgRaw);
             const v = pkg.version;
             installedVersion =

@@ -89,7 +89,7 @@ function writeStore(records: AdapterPluginRecord[]): void {
   // Atomic write: write to a temp file in the same directory then rename.
   // rename() is atomic on POSIX when source and target are on the same
   // filesystem, preventing partial/corrupted reads from concurrent processes.
-  const tmpPath = `${ADAPTER_PLUGINS_STORE_PATH}.${process.pid}.tmp`;
+  const tmpPath = `${ADAPTER_PLUGINS_STORE_PATH}.tmp`;
   fs.writeFileSync(tmpPath, JSON.stringify(records, null, 2), "utf-8");
   fs.renameSync(tmpPath, ADAPTER_PLUGINS_STORE_PATH);
   storeCache = records;
