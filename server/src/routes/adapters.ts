@@ -236,7 +236,7 @@ export function adapterRoutes() {
 
     // Strip version suffix if the UI sends "pkg@1.2.3" instead of separating it
     // e.g. "@henkey/hermes-paperclip-adapter@0.3.0" → packageName + version
-    let canonicalName = packageName;
+    let canonicalName = packageName.trim();
     let explicitVersion = version;
     const versionSuffix = packageName.match(/@(\d+\.\d+\.\d+.*)$/);
     if (versionSuffix) {
@@ -572,7 +572,7 @@ export function adapterRoutes() {
 
       logger.info({ type, packageName: record.packageName }, "Reinstalling adapter package via npm");
 
-      await execFileAsync("npm", ["install", "--no-save", record.packageName], {
+      await execFileAsync("npm", ["install", "--no-save", record.packageName.trim()], {
         cwd: pluginsDir,
         timeout: 120_000,
       });
