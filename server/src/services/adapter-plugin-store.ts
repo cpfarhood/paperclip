@@ -111,7 +111,7 @@ function readSettings(): AdapterSettings {
 
 function writeSettings(settings: AdapterSettings): void {
   ensureDirs();
-  const tmpPath = `${ADAPTER_SETTINGS_PATH}.${process.pid}.tmp`;
+  const tmpPath = `${ADAPTER_SETTINGS_PATH}.tmp`;
   fs.writeFileSync(tmpPath, JSON.stringify(settings, null, 2), "utf-8");
   fs.renameSync(tmpPath, ADAPTER_SETTINGS_PATH);
   settingsCache = settings;
