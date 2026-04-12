@@ -256,7 +256,7 @@ export function adapterRoutes() {
 
           logger.info({ spec, pluginsDir }, "Installing adapter package via npm");
 
-          await execFileAsync("npm", ["install", "--no-save", spec], {
+          await execFileAsync("npm", ["install", spec], {
             cwd: pluginsDir,
             timeout: 120_000,
           });
@@ -574,7 +574,7 @@ export function adapterRoutes() {
 
         logger.info({ type, packageName: record.packageName }, "Reinstalling adapter package via npm");
 
-        await execFileAsync("npm", ["install", "--no-save", record.packageName.trim()], {
+        await execFileAsync("npm", ["install", record.packageName.trim()], {
           cwd: pluginsDir,
           timeout: 120_000,
         });
