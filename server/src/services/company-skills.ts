@@ -2061,6 +2061,10 @@ export function companySkillService(db: Db) {
             warnings.push(
               `Skill "${skill.slug}" was removed from ${sourceLocator} and detached from ${usedByAgents.map((a) => a.name).join(", ")}.`,
             );
+          } else {
+            warnings.push(
+              `Skill "${skill.slug}" was removed from ${sourceLocator} and deleted.`,
+            );
           }
           await deleteSkill(companyId, skill.id);
         }

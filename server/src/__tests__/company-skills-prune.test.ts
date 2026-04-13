@@ -250,7 +250,10 @@ describeEmbeddedPostgres("scanProjectWorkspaces prune path", () => {
     expect(remainingSlugs).toContain("keep-skill");
     expect(remainingSlugs).not.toContain("prune-skill");
 
-    // No warnings about agent detachment since no agents used it
+    // A deletion warning should still be emitted (no detachment, but deletion is confirmed)
+    const deleteWarnings = result.warnings.filter((w) => w.includes("prune-skill") && w.includes("deleted"));
+    expect(deleteWarnings).toHaveLength(1);
+    // No agent-detachment warning since no agents used it
     const detachWarnings = result.warnings.filter((w) => w.includes("prune-skill") && w.includes("detached"));
     expect(detachWarnings).toHaveLength(0);
   });
