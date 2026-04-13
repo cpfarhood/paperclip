@@ -78,7 +78,9 @@ describe("company skill mutation permissions", () => {
       updated: [],
       skipped: [],
       conflicts: [],
+      pruned: [],
       warnings: [],
+      dryRun: false,
     });
     mockLogActivity.mockResolvedValue(undefined);
     mockAccessService.canUser.mockResolvedValue(true);
@@ -293,9 +295,13 @@ describe("company skill mutation permissions", () => {
       updated: [],
       skipped: [],
       conflicts: [],
+      pruned: [
+        { skillId: "skill-1", slug: "ghost-skill", key: "vercel-labs/agent-browser/ghost-skill", sourceLocator: "https://github.com/vercel-labs/agent-browser", affectedAgents: ["Builder"] },
+      ],
       warnings: [
         'Skill "ghost-skill" was removed from https://github.com/vercel-labs/agent-browser and detached from Builder.',
       ],
+      dryRun: false,
     });
 
     const res = await request(await createApp({

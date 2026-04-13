@@ -93,6 +93,7 @@ export interface CompanySkillImportResult {
 export interface CompanySkillProjectScanRequest {
   projectIds?: string[];
   workspaceIds?: string[];
+  dryRun?: boolean;
 }
 
 export interface CompanySkillProjectScanSkipped {
@@ -118,6 +119,14 @@ export interface CompanySkillProjectScanConflict {
   reason: string;
 }
 
+export interface CompanySkillProjectScanPruned {
+  skillId: string;
+  slug: string;
+  key: string;
+  sourceLocator: string | null;
+  affectedAgents: string[];
+}
+
 export interface CompanySkillProjectScanResult {
   scannedProjects: number;
   scannedWorkspaces: number;
@@ -126,7 +135,9 @@ export interface CompanySkillProjectScanResult {
   updated: CompanySkill[];
   skipped: CompanySkillProjectScanSkipped[];
   conflicts: CompanySkillProjectScanConflict[];
+  pruned: CompanySkillProjectScanPruned[];
   warnings: string[];
+  dryRun: boolean;
 }
 
 export interface CompanySkillCreateRequest {

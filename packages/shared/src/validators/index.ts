@@ -48,6 +48,7 @@ export {
   companySkillProjectScanRequestSchema,
   companySkillProjectScanSkippedSchema,
   companySkillProjectScanConflictSchema,
+  companySkillProjectScanPrunedSchema,
   companySkillProjectScanResultSchema,
   companySkillCreateSchema,
   companySkillFileDetailSchema,
