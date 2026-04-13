@@ -282,46 +282,4 @@ describeEmbeddedPostgres("scanProjectWorkspaces prune path", () => {
       ]),
     );
   });
-
-  it("reports pruned skills without deleting when dryRun is true", async () => {
-    stubGitHubSource(["keep-skill"]);
-
-    const { companySkillService } = await import("../services/company-skills.js");
-    const svc = companySkillService(db);
-    const result = await svc.scanProjectWorkspaces(companyId, { dryRun: true });
-
-    // The result should flag dryRun and list what would be pruned
-    expect(result.dryRun).toBe(true);
-    expect(result.pruned).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          slug: "prune-skill",
-          affectedAgents: expect.arrayContaining(["Builder"]),
-        }),
-      ]),
-    );
-
-    // No warnings emitted (nothing was actually deleted)
-    const pruneWarnings = result.warnings.filter((w) => w.includes("prune-skill"));
-    expect(pruneWarnings).toHaveLength(0);
-
-    // Both skills should still exist in the database
-    const remaining = await db
-      .select()
-      .from(companySkills)
-      .where(eq(companySkills.companyId, companyId));
-    const remainingSlugs = remaining.map((r) => r.slug);
-    expect(remainingSlugs).toContain("keep-skill");
-    expect(remainingSlugs).toContain("prune-skill");
-
-    // Agent config should be unchanged
-    const [agentRow] = await db
-      .select()
-      .from(agents)
-      .where(eq(agents.id, agentId));
-    const config = agentRow!.adapterConfig as Record<string, unknown>;
-    const syncConfig = config.paperclipSkillSync as Record<string, unknown>;
-    const desiredSkills = syncConfig.desiredSkills as string[];
-    expect(desiredSkills).toContain("test-org/test-skills/prune-skill");
-  });
 });

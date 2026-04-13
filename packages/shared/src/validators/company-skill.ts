@@ -76,7 +76,6 @@ export const companySkillUpdateAuthSchema = z.object({
 export const companySkillProjectScanRequestSchema = z.object({
   projectIds: z.array(z.string().uuid()).optional(),
   workspaceIds: z.array(z.string().uuid()).optional(),
-  dryRun: z.boolean().optional(),
 });
 
 export const companySkillProjectScanSkippedSchema = z.object({
@@ -102,14 +101,6 @@ export const companySkillProjectScanConflictSchema = z.object({
   reason: z.string().min(1),
 });
 
-export const companySkillProjectScanPrunedSchema = z.object({
-  skillId: z.string().uuid(),
-  slug: z.string().min(1),
-  key: z.string().min(1),
-  sourceLocator: z.string().nullable(),
-  affectedAgents: z.array(z.string()),
-});
-
 export const companySkillProjectScanResultSchema = z.object({
   scannedProjects: z.number().int().nonnegative(),
   scannedWorkspaces: z.number().int().nonnegative(),
@@ -118,9 +109,7 @@ export const companySkillProjectScanResultSchema = z.object({
   updated: z.array(companySkillSchema),
   skipped: z.array(companySkillProjectScanSkippedSchema),
   conflicts: z.array(companySkillProjectScanConflictSchema),
-  pruned: z.array(companySkillProjectScanPrunedSchema),
   warnings: z.array(z.string()),
-  dryRun: z.boolean(),
 });
 
 export const companySkillCreateSchema = z.object({

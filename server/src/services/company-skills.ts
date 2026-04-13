@@ -17,7 +17,6 @@ import type {
   CompanySkillImportResult,
   CompanySkillListItem,
   CompanySkillProjectScanConflict,
-  CompanySkillProjectScanPruned,
   CompanySkillProjectScanRequest,
   CompanySkillProjectScanResult,
   CompanySkillProjectScanSkipped,
@@ -1861,10 +1860,8 @@ export function companySkillService(db: Db) {
       ? await projects.listByIds(companyId, input.projectIds)
       : await projects.list(companyId);
     const workspaceFilter = new Set(input.workspaceIds ?? []);
-    const dryRun = input.dryRun === true;
     const skipped: CompanySkillProjectScanSkipped[] = [];
     const conflicts: CompanySkillProjectScanConflict[] = [];
-    const pruned: CompanySkillProjectScanPruned[] = [];
     const warnings: string[] = [];
     const imported: CompanySkill[] = [];
     const updated: CompanySkill[] = [];
@@ -2046,18 +2043,6 @@ export function companySkillService(db: Db) {
         for (const skill of skillsAtSource) {
           if (currentSlugs.has(skill.slug)) continue;
           const usedByAgents = await usage(companyId, skill.key);
-          const affectedAgentNames = usedByAgents.map((a) => a.name);
-
-          pruned.push({
-            skillId: skill.id,
-            slug: skill.slug,
-            key: skill.key,
-            sourceLocator: skill.sourceLocator,
-            affectedAgents: affectedAgentNames,
-          });
-
-          if (dryRun) continue;
-
           if (usedByAgents.length > 0) {
             // Detach the skill from all agents that have it, then delete
             for (const agent of usedByAgents) {
@@ -2074,7 +2059,7 @@ export function companySkillService(db: Db) {
               }
             }
             warnings.push(
-              `Skill "${skill.slug}" was removed from ${sourceLocator} and detached from ${affectedAgentNames.join(", ")}.`,
+              `Skill "${skill.slug}" was removed from ${sourceLocator} and detached from ${usedByAgents.map((a) => a.name).join(", ")}.`,
             );
           } else {
             warnings.push(
@@ -2097,9 +2082,7 @@ export function companySkillService(db: Db) {
       updated,
       skipped,
       conflicts,
-      pruned,
       warnings,
-      dryRun,
     };
   }
 
