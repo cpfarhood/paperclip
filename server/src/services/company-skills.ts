@@ -1585,6 +1585,22 @@ export function companySkillService(db: Db) {
     }
   }
 
+  /** Resolve the GitHub auth token from a skill's metadata, if stored. */
+  async function resolveSkillAuthToken(
+    companyId: string,
+    skill: { metadata: Record<string, unknown> | null },
+  ): Promise<string | undefined> {
+    const meta = skill.metadata;
+    if (!meta) return undefined;
+    const secretId = typeof meta.sourceAuthSecretId === "string" ? meta.sourceAuthSecretId.trim() : "";
+    if (!secretId) return undefined;
+    try {
+      return await secretsSvc.resolveSecretValue(companyId, secretId, "latest");
+    } catch {
+      return undefined;
+    }
+  }
+
   async function ensureBundledSkills(companyId: string) {
     for (const skillsRoot of resolveBundledSkillsRoot()) {
       const stats = await fs.stat(skillsRoot).catch(() => null);
