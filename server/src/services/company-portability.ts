@@ -4171,6 +4171,26 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
           desiredSkills,
           mode,
         );
+
+        // Reconstruct adapterConfig.env from manifest.envInputs for this agent
+        const agentEnvInputs = (sourceManifest.envInputs ?? []).filter((e) => e.agentSlug === manifestAgent.slug);
+        if (agentEnvInputs.length > 0) {
+          const env: Record<string, unknown> = {};
+          for (const ei of agentEnvInputs) {
+            if (ei.kind === "secret" && ei.secretName) {
+              const newSecretId = secretNameToId.get(ei.secretName);
+              if (newSecretId) {
+                env[ei.key] = { type: "secret_ref", secretId: newSecretId };
+              }
+            } else if (ei.kind === "plain" && ei.defaultValue !== null) {
+              env[ei.key] = { type: "plain", value: ei.defaultValue };
+            }
+          }
+          if (Object.keys(env).length > 0) {
+            normalizedAdapter.adapterConfig.env = env;
+          }
+        }
+
         const patch = {
           name: planAgent.plannedName,
           role: manifestAgent.role,
@@ -4299,6 +4319,22 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
             ?? null
           : null;
         const projectWorkspaceIdByKey = new Map<string, string>();
+        // Build project env from manifest.envInputs filtered by this project
+        const projectEnvInputs = (sourceManifest.envInputs ?? []).filter((e) => e.projectSlug === planProject.slug);
+        const reconstructedProjectEnv: Record<string, unknown> = {};
+        for (const ei of projectEnvInputs) {
+          if (ei.kind === "secret" && ei.secretName) {
+            const newSecretId = secretNameToId.get(ei.secretName);
+            if (newSecretId) {
+              reconstructedProjectEnv[ei.key] = { type: "secret_ref", secretId: newSecretId };
+            }
+          } else if (ei.kind === "plain" && ei.defaultValue !== null) {
+            reconstructedProjectEnv[ei.key] = { type: "plain", value: ei.defaultValue };
+          }
+        }
+        const projectEnvConfig = Object.keys(reconstructedProjectEnv).length > 0
+          ? await secrets.normalizeEnvBindingsForPersistence(targetCompany.id, reconstructedProjectEnv as any, { strictMode: strictSecretsMode })
+          : null;
         const projectPatch = {
           name: planProject.plannedName,
           description: manifestProject.description,
@@ -4308,7 +4344,7 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
           status: manifestProject.status && PROJECT_STATUSES.includes(manifestProject.status as any)
             ? manifestProject.status as typeof PROJECT_STATUSES[number]
             : "backlog",
-          env: manifestProject.env,
+          env: projectEnvConfig ?? undefined,
           executionWorkspacePolicy: stripPortableProjectExecutionWorkspaceRefs(manifestProject.executionWorkspacePolicy),
         };
 
@@ -4429,6 +4465,9 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
       }
     }
 
+    // Note: the legacy secret remapping below is kept as a safety net for
+    // agents/projects that were created/updated before this code existed.
+    // It can be removed once the inline reconstruction above is stable.
     // Reconstruct plain env bindings and fill in missing env keys on imported agents/projects
     for (const envInput of sourceManifest.envInputs ?? []) {
       if (envInput.kind !== "plain" && !(envInput.kind === "secret" && !envInput.secretName)) continue;
@@ -4445,7 +4484,6 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
           if (envInput.kind === "plain") {
             env[envInput.key] = { type: "plain", value: envInput.defaultValue ?? "" };
           }
-          // secret without secretName: no binding to create, skip
         }
         adapterConfig.env = env;
         await agents.update(agentId, { adapterConfig });
