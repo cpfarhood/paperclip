@@ -684,7 +684,6 @@ export function CompanyExport() {
       companiesApi.exportPreview(selectedCompanyId!, {
         include: { company: true, agents: true, projects: true, issues: true },
         sidebarOrder,
-        includeSecrets,
       }),
     onSuccess: (result) => {
       setExportData(result);
@@ -760,7 +759,7 @@ export function CompanyExport() {
     setExportData(null);
     exportPreviewMutation.mutate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCompanyId, isSessionFetched, areAgentsFetched, areProjectsFetched, sidebarOrderKey, includeSecrets]);
+  }, [selectedCompanyId, isSessionFetched, areAgentsFetched, areProjectsFetched, sidebarOrderKey]);
 
   const tree = useMemo(
     () => (exportData ? buildFileTree(exportData.files) : []),
@@ -949,11 +948,14 @@ export function CompanyExport() {
                 {warnings.length} warning{warnings.length === 1 ? "" : "s"}
               </span>
             )}
-            {exportData?.manifest.secrets && exportData.manifest.secrets.length > 0 && (
-              <span className="rounded-md border border-amber-500/30 bg-amber-500/5 px-2 py-0.5 text-xs text-amber-500">
-                {exportData.manifest.secrets.length} secret{exportData.manifest.secrets.length === 1 ? "" : "s"} included
-              </span>
-            )}
+            {includeSecrets && (() => {
+              const secretCount = new Set(exportData?.manifest.envInputs?.filter((e) => e.kind === "secret" && e.secretName).map((e) => e.secretName)).size;
+              return secretCount > 0 ? (
+                <span className="rounded-md border border-amber-500/30 bg-amber-500/5 px-2 py-0.5 text-xs text-amber-500">
+                  {secretCount} secret{secretCount === 1 ? "" : "s"} will be included
+                </span>
+              ) : null;
+            })()}
           </div>
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2 text-sm">
