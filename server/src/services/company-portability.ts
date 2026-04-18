@@ -4086,6 +4086,10 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
     const resultAgents: CompanyPortabilityImportResult["agents"] = [];
     const resultProjects: CompanyPortabilityImportResult["projects"] = [];
     const importedSlugToAgentId = new Map<string, string>();
+    // Maps secret name → new secret ID in target company; populated by the
+    // secrets-creation step when sourceManifest.secrets is present (added by
+    // the includeSecrets export flag). Empty until that code path lands.
+    const secretNameToId = new Map<string, string>();
     const existingSlugToAgentId = new Map<string, string>();
     const agentStatusById = new Map<string, string | null | undefined>();
     const existingAgents = await agents.list(targetCompany.id);
