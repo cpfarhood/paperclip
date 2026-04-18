@@ -448,7 +448,6 @@ describe("company portability", () => {
     expect(extension).not.toContain("instructionsFilePath");
     expect(extension).not.toContain("command:");
     expect(extension).not.toContain("secretId");
-    expect(extension).not.toContain('type: "secret_ref"');
     expect(extension).toContain("inputs:");
     expect(extension).toContain("ANTHROPIC_API_KEY:");
     expect(extension).toContain('requirement: "optional"');
@@ -1173,6 +1172,9 @@ describe("company portability", () => {
         requirement: "optional",
         defaultValue: "",
         portability: "portable",
+        secretName: "anthropic-api-key",
+        secretProvider: "local_encrypted",
+        type: "secret_ref",
       },
       {
         key: "GH_TOKEN",
@@ -1183,6 +1185,12 @@ describe("company portability", () => {
         requirement: "optional",
         defaultValue: "",
         portability: "portable",
+<<<<<<< HEAD
+=======
+        secretName: "gh-token",
+        secretName: "gh-token",
+        secretProvider: "local_encrypted",
+        type: "secret_ref",
       },
     ]);
   });

@@ -566,6 +566,7 @@ type AgentLike = {
 };
 
 type EnvInputRecord = {
+  type: "secret_ref" | "plain";
   kind: "secret" | "plain";
   requirement: "required" | "optional";
   default?: string | null;
@@ -2247,6 +2248,11 @@ function buildEnvInputMap(inputs: CompanyPortabilityEnvInput[]) {
     if (input.defaultValue !== null) entry.default = input.defaultValue;
     if (input.description) entry.description = input.description;
     if (input.portability === "system_dependent") entry.portability = "system_dependent";
+    if (input.secretName) {
+      entry.secretName = input.secretName;
+      entry.type = "secret_ref";
+    }
+    if (input.secretProvider) entry.secretProvider = input.secretProvider;
     env[input.key] = entry;
   }
   return env;
@@ -2291,6 +2297,9 @@ function readAgentEnvInputs(
       requirement: record.requirement === "required" ? "required" : "optional",
       defaultValue: typeof record.default === "string" ? record.default : null,
       portability: record.portability === "system_dependent" ? "system_dependent" : "portable",
+      secretName: record.secretName ?? null,
+      secretProvider: record.secretProvider ?? null,
+      type: record.type,
     }];
   });
 }
@@ -2315,6 +2324,9 @@ function readProjectEnvInputs(
       requirement: record.requirement === "required" ? "required" : "optional",
       defaultValue: typeof record.default === "string" ? record.default : null,
       portability: record.portability === "system_dependent" ? "system_dependent" : "portable",
+      secretName: record.secretName ?? null,
+      secretProvider: record.secretProvider ?? null,
+      type: record.type,
     }];
   });
 }
@@ -4372,6 +4384,83 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
             executionWorkspacePolicy: hydratedProjectExecutionWorkspacePolicy,
           });
         }
+      }
+    }
+
+    // Remap secret_ref bindings in imported agent/project records to target company secret IDs
+    for (const envInput of sourceManifest.envInputs ?? []) {
+      if (envInput.kind !== "secret" || !envInput.secretName) continue;
+      const newSecretId = secretNameToId.get(envInput.secretName);
+      if (!newSecretId) {
+        // secret wasn't created (decryption failure or error) — it's already a placeholder in the env
+        continue;
+      }
+      if (envInput.agentSlug) {
+        const agentId = importedSlugToAgentId.get(envInput.agentSlug);
+        if (agentId) {
+          const agent = await agents.getById(agentId);
+          if (agent) {
+            const adapterConfig = agent.adapterConfig as Record<string, unknown>;
+            const env = adapterConfig.env as Record<string, unknown> | undefined;
+            if (env && typeof env[envInput.key] === "object" && env[envInput.key] !== null) {
+              const binding = env[envInput.key] as Record<string, unknown>;
+              if (binding.type === "secret_ref") {
+                binding.secretId = newSecretId;
+              }
+            }
+            await agents.update(agentId, { adapterConfig });
+          }
+        }
+      } else if (envInput.projectSlug) {
+        const projectId = importedSlugToProjectId.get(envInput.projectSlug);
+        if (projectId) {
+          const project = await projects.getById(projectId);
+          if (project && project.env && typeof project.env === "object") {
+            const env = project.env as Record<string, unknown>;
+            if (typeof env[envInput.key] === "object" && env[envInput.key] !== null) {
+              const binding = env[envInput.key] as Record<string, unknown>;
+              if (binding.type === "secret_ref") {
+                binding.secretId = newSecretId;
+              }
+            }
+            await projects.update(projectId, { env: env as import("@paperclipai/shared").AgentEnvConfig });
+          }
+        }
+      }
+    }
+
+    // Reconstruct plain env bindings and fill in missing env keys on imported agents/projects
+    for (const envInput of sourceManifest.envInputs ?? []) {
+      if (envInput.kind !== "plain" && !(envInput.kind === "secret" && !envInput.secretName)) continue;
+      if (!envInput.defaultValue && envInput.kind === "plain") continue;
+
+      if (envInput.agentSlug) {
+        const agentId = importedSlugToAgentId.get(envInput.agentSlug);
+        if (!agentId) continue;
+        const agent = await agents.getById(agentId);
+        if (!agent) continue;
+        const adapterConfig = agent.adapterConfig as Record<string, unknown>;
+        const env = (adapterConfig.env as Record<string, unknown>) ?? {};
+        if (!env[envInput.key]) {
+          if (envInput.kind === "plain") {
+            env[envInput.key] = { type: "plain", value: envInput.defaultValue ?? "" };
+          }
+          // secret without secretName: no binding to create, skip
+        }
+        adapterConfig.env = env;
+        await agents.update(agentId, { adapterConfig });
+      } else if (envInput.projectSlug) {
+        const projectId = importedSlugToProjectId.get(envInput.projectSlug);
+        if (!projectId) continue;
+        const project = await projects.getById(projectId);
+        if (!project) continue;
+        const env = (project.env as Record<string, unknown>) ?? {};
+        if (!env[envInput.key]) {
+          if (envInput.kind === "plain") {
+            env[envInput.key] = { type: "plain", value: envInput.defaultValue ?? "" };
+          }
+        }
+        await projects.update(projectId, { env: env as import("@paperclipai/shared").AgentEnvConfig });
       }
     }
 

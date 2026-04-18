@@ -18,6 +18,10 @@ export interface CompanyPortabilityEnvInput {
   requirement: "required" | "optional";
   defaultValue: string | null;
   portability: "portable" | "system_dependent";
+  secretName?: string | null;
+  secretProvider?: string | null;
+  /** Binding type — stored in extension.inputs.env but not in the manifest type itself */
+  type?: "secret_ref" | "plain";
 }
 
 export type CompanyPortabilityFileEntry =
