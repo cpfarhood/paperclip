@@ -572,6 +572,8 @@ type EnvInputRecord = {
   default?: string | null;
   description?: string | null;
   portability?: "portable" | "system_dependent";
+  secretName?: string | null;
+  secretProvider?: string | null;
 };
 
 const COMPANY_LOGO_CONTENT_TYPE_EXTENSIONS: Record<string, string> = {
