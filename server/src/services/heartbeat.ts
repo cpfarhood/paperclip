@@ -1567,11 +1567,8 @@ function adapterHasOutOfProcessLiveness(adapterType: string) {
 }
 
 function buildAdapterLivenessLostMessage(adapterType: string, staleThresholdMs: number) {
-  if (staleThresholdMs > 0) {
-    const staleSec = Math.round(staleThresholdMs / 1000);
-    return `Adapter ${adapterType} liveness lost -- no run activity for over ${staleSec}s (out-of-process adapter; local pid not applicable)`;
-  }
-  return `Adapter ${adapterType} liveness lost -- no run activity (out-of-process adapter; local pid not applicable)`;
+  const staleSec = Math.round(staleThresholdMs / 1000);
+  return `Adapter ${adapterType} liveness lost -- no run activity for over ${staleSec}s (out-of-process adapter; local pid not applicable)`;
 }
 
 // A positive liveness check means some process currently owns the PID.
