@@ -358,6 +358,26 @@ export interface ServerAdapterModule {
    * rather than reading config.paperclipRuntimeSkills.
    */
   requiresMaterializedRuntimeSkills?: boolean;
+
+  /**
+   * Adapter drives execution out-of-process (Kubernetes Jobs, remote HTTP
+   * services, etc.) and therefore has no meaningful local child pid for the
+   * orphan reaper to probe. When `true`:
+   *   - The reaper skips local pid / process-group liveness checks.
+   *   - On cold startup (no staleness threshold), runs are NOT immediately
+   *     reaped; the adapter is given a chance to re-establish liveness by
+   *     refreshing `heartbeatRuns.updatedAt` via its own polling.
+   *   - When a run is ultimately reaped, the error code is
+   *     `adapter_liveness_lost` and the message makes clear that no local
+   *     pid was involved (instead of the misleading "child pid -1" string).
+   *   - No `process_lost` retry is queued (the loss has nothing to do with a
+   *     local child process disappearing).
+   *
+   * Built-in local adapters default to `false`. External adapters that run
+   * work remotely (e.g. `claude_k8s`, gateway adapters) should opt in with
+   * `true`.
+   */
+  hasOutOfProcessLiveness?: boolean;
 }
 
 // ---------------------------------------------------------------------------

@@ -7,6 +7,7 @@ export type HeartbeatRunStopReason =
   | "budget_paused"
   | "paused"
   | "process_lost"
+  | "adapter_liveness_lost"
   | "adapter_failed";
 
 export interface HeartbeatRunTimeoutPolicy {
@@ -78,6 +79,7 @@ export function inferHeartbeatRunStopReason(input: {
   if (input.outcome === "succeeded") return "completed";
   if (input.outcome === "timed_out") return "timeout";
   if (input.outcome === "failed" && input.errorCode === "process_lost") return "process_lost";
+  if (input.outcome === "failed" && input.errorCode === "adapter_liveness_lost") return "adapter_liveness_lost";
   if (input.outcome === "cancelled") {
     const message = (input.errorMessage ?? "").toLowerCase();
     if (message.includes("budget")) return "budget_paused";
