@@ -1,0 +1,116 @@
+name: Assemble local branch
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  assemble:
+    runs-on: runners-farhoodliquor
+    timeout-minutes: 15
+    steps:
+      - name: Checkout master
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch all remotes
+        run: |
+          git remote add upstream https://github.com/paperclipai/paperclip.git 2>/dev/null || true
+          git fetch --all --quiet
+
+      - name: Assemble local branch
+        run: |
+          set -euo pipefail
+
+          # Start local from master (which mirrors upstream)
+          git checkout -B local origin/master
+
+          # Apply fork overlay: Dockerfile and build workflows
+          cp .farhoodliquor/Dockerfile Dockerfile
+          mkdir -p .github/workflows
+          cp .farhoodliquor/.github/workflows/build-prod.yml .github/workflows/build-prod.yml
+          cp .farhoodliquor/.github/workflows/build-dev.yml .github/workflows/build-dev.yml
+          git add Dockerfile .github/workflows/build-prod.yml .github/workflows/build-dev.yml
+          git commit -m "chore: apply fork overlay from .farhoodliquor"
+
+          # Cherry-pick commits from pending upstream PRs, oldest first.
+          # Each entry is: "PR-number branch-name" for documentation clarity.
+          # When upstream merges a PR, its unique commits drop to zero and it is skipped automatically.
+          PR_BRANCHES=(
+            "3237 skill-pat-feature"
+            "3351 skill-scan-refresh"
+            "3490 fix/adapter-plugin-concurrency-clean"
+            "3640 feat/plugin-tool-events"
+            "3987 feat/company-portability-complete"
+            "4162 fix/far-108-k8s-adapter-reaper-liveness"
+          )
+
+          for entry in "${PR_BRANCHES[@]}"; do
+            pr_num="${entry%% *}"
+            branch="${entry#* }"
+            remote_branch="origin/$branch"
+
+            if ! git rev-parse "$remote_branch" &>/dev/null; then
+              echo "WARNING: $remote_branch not found, skipping PR #$pr_num"
+              continue
+            fi
+
+            # Commits unique to this branch that aren't already in upstream/master
+            mapfile -t commits < <(git log --reverse --format="%H" upstream/master.."$remote_branch")
+
+            if [ ${#commits[@]} -eq 0 ]; then
+              echo "PR #$pr_num ($branch): no unique commits — likely merged upstream, skipping"
+              continue
+            fi
+
+            echo "PR #$pr_num ($branch): cherry-picking ${#commits[@]} commit(s)"
+            for sha in "${commits[@]}"; do
+              git cherry-pick "$sha" || {
+                echo "::error::Cherry-pick conflict at $sha from PR #$pr_num ($branch)"
+                echo "::error::Resolve the conflict manually, then re-run this workflow"
+                git cherry-pick --abort
+                exit 1
+              }
+            done
+          done
+
+          git push origin local --force
+          echo "local branch assembled and pushed"
+
+      - name: Sync build-dev.yml to dev branch
+        run: |
+          set -euo pipefail
+
+          if ! git rev-parse origin/dev &>/dev/null; then
+            echo "dev branch not found on origin, skipping"
+            exit 0
+          fi
+
+          canonical=".farhoodliquor/.github/workflows/build-dev.yml"
+          target=".github/workflows/build-dev.yml"
+
+          # Check if dev already has the canonical version
+          if git show origin/dev:"$target" 2>/dev/null | diff --brief - "$canonical" &>/dev/null; then
+            echo "build-dev.yml on dev is up to date, skipping"
+            exit 0
+          fi
+
+          echo "Syncing build-dev.yml to dev branch..."
+          git checkout -B dev-wf-sync origin/dev
+          mkdir -p "$(dirname "$target")"
+          cp "$canonical" "$target"
+          git add "$target"
+          git commit -m "chore(ci): sync build-dev.yml from .farhoodliquor"
+          git push origin dev-wf-sync:dev
+          echo "build-dev.yml synced to dev"
