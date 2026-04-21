@@ -390,6 +390,7 @@ export type {
   CompanyPortabilityImportRequest,
   CompanyPortabilityImportResult,
   CompanyPortabilityExportRequest,
+  CompanyPortabilitySecretEntry,
   EnvBinding,
   AgentEnvConfig,
   CompanySecret,
