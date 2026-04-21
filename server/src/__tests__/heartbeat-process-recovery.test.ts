@@ -606,6 +606,13 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     // for out-of-process adapters at startup.
     expect(run?.errorCode).not.toBe("process_lost");
     expect(run?.error ?? "").not.toContain("child pid");
+
+    // Mark the run terminal so the afterEach cleanup loop does not spin the
+    // full 100-iteration timeout waiting for it to settle.
+    await db
+      .update(heartbeatRuns)
+      .set({ status: "failed" })
+      .where(eq(heartbeatRuns.id, runId));
   });
 
   it("reaps stale out-of-process adapter runs with adapter_liveness_lost (no process_lost retry)", async () => {
