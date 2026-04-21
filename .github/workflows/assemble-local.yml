@@ -4,12 +4,9 @@ name: Assemble local branch
 # Builds the `local` branch: master + fork overlay + cherry-picked pending upstream PRs.
 # Syncs build-dev.yml to the `dev` branch so every dev push triggers a build.
 #
-# KNOWN CONFLICT: skill-scan-refresh (#3351) and skill-pat-feature (#3237) both modify
-# the same line in company-skills.ts. Rebase skill-scan-refresh onto skill-pat-feature
-# to make this action fully unattended:
-#   git rebase origin/skill-pat-feature origin/skill-scan-refresh
-#   git push origin skill-scan-refresh --force-with-lease
-# Until then, this conflict requires manual resolution and a re-run.
+# PR entries support an optional "exclude:BRANCH" suffix to handle cases where
+# one PR branch was rebased onto another. The exclude branch's commits are subtracted
+# from the cherry-pick range so they aren't double-applied.
 #
 # When upstream merges a PR, remove its entry from PR_CHERRY_PICK or PR_SQUASH below.
 
@@ -58,26 +55,34 @@ jobs:
           git commit -m "chore: apply fork overlay from .farhoodliquor"
 
           # --- PRs to cherry-pick commit-by-commit (clean, no merge commits) ---
+          # Format: "PR-number branch-name [exclude:base-branch]"
+          # Use exclude: when a branch was rebased onto another PR branch to avoid double-applying commits.
           # Remove an entry here when upstream merges the PR.
           PR_CHERRY_PICK=(
             "3237 skill-pat-feature"
-            "3351 skill-scan-refresh"
+            "3351 skill-scan-refresh exclude:skill-pat-feature"
             "3490 fix/adapter-plugin-concurrency-clean"
             "3640 feat/plugin-tool-events"
             "4162 fix/far-108-k8s-adapter-reaper-liveness"
           )
 
           for entry in "${PR_CHERRY_PICK[@]}"; do
-            pr_num="${entry%% *}"
-            branch="${entry#* }"
+            # Parse: pr_num, branch, optional exclude branch
+            pr_num=$(echo "$entry" | awk '{print $1}')
+            branch=$(echo "$entry" | awk '{print $2}')
+            exclude_branch=$(echo "$entry" | grep -oP '(?<=exclude:)\S+' || true)
             remote_branch="origin/$branch"
+            exclude_arg=""
+            if [ -n "$exclude_branch" ]; then
+              exclude_arg="--not origin/$exclude_branch"
+            fi
 
             if ! git rev-parse "$remote_branch" &>/dev/null; then
               echo "WARNING: $remote_branch not found, skipping PR #$pr_num"
               continue
             fi
 
-            mapfile -t commits < <(git log --no-merges --reverse --format="%H" upstream/master.."$remote_branch")
+            mapfile -t commits < <(git log --no-merges --reverse --format="%H" upstream/master.."$remote_branch" $exclude_arg)
 
             if [ ${#commits[@]} -eq 0 ]; then
               echo "PR #$pr_num ($branch): no unique commits — likely merged upstream, skipping"
