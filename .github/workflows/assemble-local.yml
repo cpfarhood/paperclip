@@ -139,6 +139,11 @@ jobs:
           git push origin local --force
           echo "local branch assembled and pushed"
 
+      - name: Trigger prod build
+        run: gh workflow run build-prod.yml --ref local
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Sync build-dev.yml to dev branch
         run: |
           set -euo pipefail
