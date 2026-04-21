@@ -46,12 +46,13 @@ jobs:
           # Start local from master (which mirrors upstream)
           git checkout -B local origin/master
 
-          # Apply fork overlay: Dockerfile and build workflows
+          # Apply fork overlay: Dockerfile, build workflows, CLAUDE.md
           cp .farhoodliquor/Dockerfile Dockerfile
+          cp .farhoodliquor/CLAUDE.md CLAUDE.md
           mkdir -p .github/workflows
           cp .farhoodliquor/.github/workflows/build-prod.yml .github/workflows/build-prod.yml
           cp .farhoodliquor/.github/workflows/build-dev.yml .github/workflows/build-dev.yml
-          git add Dockerfile .github/workflows/build-prod.yml .github/workflows/build-dev.yml
+          git add Dockerfile CLAUDE.md .github/workflows/build-prod.yml .github/workflows/build-dev.yml
           git commit -m "chore: apply fork overlay from .farhoodliquor"
 
           # --- PRs to cherry-pick commit-by-commit (clean, no merge commits) ---
