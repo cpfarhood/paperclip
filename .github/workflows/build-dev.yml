@@ -37,7 +37,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/farhoodliquor/paperclip-dev
+          images: ghcr.io/farhoodlabs/paperclip-dev
           tags: |
             type=raw,value=latest
             type=sha,prefix=
