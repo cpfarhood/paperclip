@@ -21,7 +21,7 @@ permissions:
 
 jobs:
   assemble:
-    runs-on: runners-farhoodliquor
+    runs-on: runners-farhoodlabs
     timeout-minutes: 15
     steps:
       - name: Checkout master
@@ -48,13 +48,13 @@ jobs:
           git checkout -B local origin/master
 
           # Apply fork overlay: Dockerfile, build workflows, CLAUDE.md
-          cp .farhoodliquor/Dockerfile Dockerfile
-          cp .farhoodliquor/CLAUDE.md CLAUDE.md
+          cp .farhoodlabs/Dockerfile Dockerfile
+          cp .farhoodlabs/CLAUDE.md CLAUDE.md
           mkdir -p .github/workflows
-          cp .farhoodliquor/.github/workflows/build-prod.yml .github/workflows/build-prod.yml
-          cp .farhoodliquor/.github/workflows/build-dev.yml .github/workflows/build-dev.yml
+          cp .farhoodlabs/.github/workflows/build-prod.yml .github/workflows/build-prod.yml
+          cp .farhoodlabs/.github/workflows/build-dev.yml .github/workflows/build-dev.yml
           git add Dockerfile CLAUDE.md .github/workflows/build-prod.yml .github/workflows/build-dev.yml
-          git commit -m "chore: apply fork overlay from .farhoodliquor"
+          git commit -m "chore: apply fork overlay from .farhoodlabs"
 
           # --- PRs to cherry-pick commit-by-commit (clean, no merge commits) ---
           # Format: "PR-number branch-name [exclude:base-branch]"
@@ -157,7 +157,7 @@ jobs:
             exit 0
           fi
 
-          canonical=".farhoodliquor/.github/workflows/build-dev.yml"
+          canonical=".farhoodlabs/.github/workflows/build-dev.yml"
           target=".github/workflows/build-dev.yml"
 
           if git show origin/dev:"$target" 2>/dev/null | diff --brief - "$canonical" &>/dev/null; then
@@ -166,7 +166,7 @@ jobs:
           fi
 
           echo "Syncing build-dev.yml to dev branch..."
-          # Save canonical content before switching branches (.farhoodliquor/ only exists on master)
+          # Save canonical content before switching branches (.farhoodlabs/ only exists on master)
           tmp=$(mktemp)
           cp "$canonical" "$tmp"
           git checkout -B dev-wf-sync origin/dev
@@ -174,6 +174,6 @@ jobs:
           cp "$tmp" "$target"
           rm "$tmp"
           git add "$target"
-          git commit -m "chore(ci): sync build-dev.yml from .farhoodliquor"
+          git commit -m "chore(ci): sync build-dev.yml from .farhoodlabs"
           git push origin dev-wf-sync:dev
           echo "build-dev.yml synced to dev"
