@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: runners-farhoodliquor
+    runs-on: runners-farhoodlabs
     timeout-minutes: 30
     outputs:
       image-tag: ${{ steps.tag.outputs.sha }}
@@ -43,7 +43,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/farhoodliquor/paperclip-dev
+          images: ghcr.io/farhoodlabs/paperclip-dev
           tags: |
             type=raw,value=latest
             type=sha,prefix=
@@ -60,7 +60,7 @@ jobs:
 
   update-infra:
     needs: build
-    runs-on: runners-farhoodliquor
+    runs-on: runners-farhoodlabs
     steps:
       - name: Generate app token
         id: app-token
@@ -78,7 +78,7 @@ jobs:
           response=$(curl -sS \
             -H "Authorization: Bearer ${{ steps.app-token.outputs.token }}" \
             -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/farhoodliquor/paperclip-infra/contents/$FILE")
+            "https://api.github.com/repos/farhoodlabs/paperclip-infra/contents/$FILE")
 
           file_sha=$(echo "$response" | jq -r '.sha')
           content=$(echo "$response" | jq -r '.content' | base64 -d)
@@ -88,5 +88,5 @@ jobs:
           curl -sS -X PUT \
             -H "Authorization: Bearer ${{ steps.app-token.outputs.token }}" \
             -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/farhoodliquor/paperclip-infra/contents/$FILE" \
+            "https://api.github.com/repos/farhoodlabs/paperclip-infra/contents/$FILE" \
             -d "{\"message\":\"chore(cd): update paperclip-dev to $SHA\",\"content\":\"$encoded\",\"sha\":\"$file_sha\"}"

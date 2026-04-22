@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   sync:
-    runs-on: runners-farhoodliquor
+    runs-on: runners-farhoodlabs
     timeout-minutes: 10
     steps:
       - name: Checkout master

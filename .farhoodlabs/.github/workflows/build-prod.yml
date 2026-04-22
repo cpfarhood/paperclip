@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: runners-farhoodliquor
+    runs-on: runners-farhoodlabs
     timeout-minutes: 30
     steps:
       - name: Checkout
@@ -37,7 +37,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/farhoodliquor/paperclip
+          images: ghcr.io/farhoodlabs/paperclip
           tags: |
             type=raw,value=latest
             type=sha,prefix=

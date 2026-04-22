@@ -1,7 +1,7 @@
 # Disabled in fork — Docker builds are handled by the fork overlay:
-#   build-prod.yml triggers on `local` branch → ghcr.io/farhoodliquor/paperclip
-#   build-dev.yml  triggers on `dev` branch   → ghcr.io/farhoodliquor/paperclip-dev
-# See .farhoodliquor/.github/workflows/ and .github/workflows/assemble-local.yml
+#   build-prod.yml triggers on `local` branch → ghcr.io/farhoodlabs/paperclip
+#   build-dev.yml  triggers on `dev` branch   → ghcr.io/farhoodlabs/paperclip-dev
+# See .farhoodlabs/.github/workflows/ and .github/workflows/assemble-local.yml
 #
 # NOTE: upstream may overwrite this file when master is synced. Re-apply if that happens,
 # or use the sync-upstream.yml action which re-applies these overrides automatically.
