@@ -957,37 +957,11 @@ export function CompanyExport() {
                 {warnings.length} warning{warnings.length === 1 ? "" : "s"}
               </span>
             )}
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 text-sm">
-              <ToggleSwitch
-                checked={includeSecrets}
-                onCheckedChange={(checked) => {
-                  if (checked) {
-                    setSecretsConfirmOpen(true);
-                  } else {
-                    setIncludeSecrets(false);
-                  }
-                }}
-              />
-              <span className="cursor-pointer text-muted-foreground hover:text-foreground transition-colors" onClick={() => {
-                if (includeSecrets) {
-                  setIncludeSecrets(false);
-                } else {
-                  setSecretsConfirmOpen(true);
-                }
-              }}>
-                Include secrets
+            {includeSecrets && (
+              <span className="rounded-md border border-amber-500/30 bg-amber-500/5 px-2 py-0.5 text-xs text-amber-500">
+                Secrets included
               </span>
-              {includeSecrets && (() => {
-                const secretCount = new Set(exportData?.manifest.envInputs?.filter((e) => e.kind === "secret" && e.secretName).map((e) => e.secretName)).size;
-                return secretCount > 0 ? (
-                  <span className="rounded-md border border-amber-500/30 bg-amber-500/5 px-2 py-0.5 text-xs text-amber-500">
-                    {secretCount} secret{secretCount === 1 ? "" : "s"}
-                  </span>
-                ) : null;
-              })()}
-            </div>
+            )}
           </div>
           <Button
             size="sm"
@@ -1016,6 +990,29 @@ export function CompanyExport() {
         <aside className="flex flex-col border-r border-border overflow-hidden">
           <div className="border-b border-border px-4 py-3 shrink-0">
             <h2 className="text-base font-semibold">Package files</h2>
+          </div>
+          <div className="border-b border-border px-4 py-2.5 shrink-0">
+            <div className="flex items-center gap-2 text-sm">
+              <ToggleSwitch
+                checked={includeSecrets}
+                onCheckedChange={(checked) => {
+                  if (checked) {
+                    setSecretsConfirmOpen(true);
+                  } else {
+                    setIncludeSecrets(false);
+                  }
+                }}
+              />
+              <span className="cursor-pointer text-muted-foreground hover:text-foreground transition-colors" onClick={() => {
+                if (includeSecrets) {
+                  setIncludeSecrets(false);
+                } else {
+                  setSecretsConfirmOpen(true);
+                }
+              }}>
+                Include secrets
+              </span>
+            </div>
           </div>
           <div className="border-b border-border px-3 py-2 shrink-0">
             <div className="flex items-center gap-2 rounded-md border border-border px-2 py-1">
