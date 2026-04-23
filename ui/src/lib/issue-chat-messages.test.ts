@@ -3,6 +3,7 @@ import type { Agent } from "@paperclipai/shared";
 import {
   buildAssistantPartsFromTranscript,
   buildIssueChatMessages,
+  stabilizeThreadMessages,
   type IssueChatComment,
   type IssueChatLinkedRun,
 } from "./issue-chat-messages";
@@ -233,6 +234,27 @@ describe("buildAssistantPartsFromTranscript", () => {
 });
 
 describe("buildIssueChatMessages", () => {
+  it("uses the company user label for current-user comments instead of collapsing to You", () => {
+    const messages = buildIssueChatMessages({
+      comments: [createComment({ authorUserId: "user-1" })],
+      timelineEvents: [],
+      linkedRuns: [],
+      liveRuns: [],
+      currentUserId: "user-1",
+      userLabelMap: new Map([["user-1", "Dotta"]]),
+    });
+
+    expect(messages[0]).toMatchObject({
+      role: "user",
+      metadata: {
+        custom: {
+          authorName: "Dotta",
+          authorUserId: "user-1",
+        },
+      },
+    });
+  });
+
   it("orders events before comments and appends active live runs as running assistant messages", () => {
     const agentMap = new Map<string, Agent>([["agent-1", createAgent("agent-1", "CodexCoder")]]);
     const comments = [
@@ -370,6 +392,70 @@ describe("buildIssueChatMessages", () => {
     ]);
   });
 
+  it("compacts long run transcripts in issue chat while preserving matching tool context", () => {
+    const isoAt = (baseMs: number, offsetSeconds: number) =>
+      new Date(baseMs + offsetSeconds * 1000).toISOString();
+    const baseMs = Date.parse("2026-04-06T12:00:00.000Z");
+    const transcript = [
+      ...Array.from({ length: 9 }, (_, index) => ({
+        kind: "assistant" as const,
+        ts: isoAt(baseMs, index),
+        text: `Older update ${index + 1}`,
+      })),
+      {
+        kind: "tool_call" as const,
+        ts: isoAt(baseMs, 9),
+        name: "search",
+        toolUseId: "tool-keep",
+        input: { query: "issue chat virtualization" },
+      },
+      ...Array.from({ length: 79 }, (_, index) => ({
+        kind: "assistant" as const,
+        ts: isoAt(baseMs, 10 + index),
+        text: `Recent update ${index + 1}`,
+      })),
+      {
+        kind: "tool_result" as const,
+        ts: isoAt(baseMs, 89),
+        toolUseId: "tool-keep",
+        content: "search completed",
+        isError: false,
+      },
+    ];
+
+    const messages = buildIssueChatMessages({
+      comments: [],
+      timelineEvents: [],
+      linkedRuns: [
+        {
+          runId: "run-history-3",
+          status: "succeeded",
+          agentId: "agent-1",
+          agentName: "CodexCoder",
+          createdAt: new Date("2026-04-06T12:00:00.000Z"),
+          startedAt: new Date("2026-04-06T12:00:00.000Z"),
+          finishedAt: new Date("2026-04-06T12:03:00.000Z"),
+        },
+      ],
+      liveRuns: [],
+      transcriptsByRunId: new Map([["run-history-3", transcript]]),
+      hasOutputForRun: (runId) => runId === "run-history-3",
+      currentUserId: "user-1",
+    });
+
+    expect(messages).toHaveLength(1);
+    const textParts = messages[0]?.content
+      .filter((part): part is { type: "text"; text: string } => part.type === "text")
+      .map((part) => part.text) ?? [];
+    expect(textParts.join("\n")).not.toContain("Older update 1");
+    expect(messages[0]?.content).toContainEqual(expect.objectContaining({
+      type: "tool-call",
+      toolCallId: "tool-keep",
+      toolName: "search",
+      result: "search completed",
+    }));
+  });
+
   it("keeps the same assistant message id when a live run becomes a cancelled historical run", () => {
     const liveMessages = buildIssueChatMessages({
       comments: [],
@@ -461,5 +547,71 @@ describe("buildIssueChatMessages", () => {
         },
       },
     });
+  });
+});
+
+describe("stabilizeThreadMessages", () => {
+  it("reuses unchanged message objects across rebuilds", () => {
+    const firstPass = buildIssueChatMessages({
+      comments: [createComment()],
+      timelineEvents: [],
+      linkedRuns: [],
+      liveRuns: [],
+      currentUserId: "user-1",
+    });
+
+    const firstStable = stabilizeThreadMessages(firstPass, [], new Map());
+    const secondPass = buildIssueChatMessages({
+      comments: [
+        createComment(),
+        createComment({
+          id: "comment-2",
+          body: "New message",
+          createdAt: new Date("2026-04-06T12:01:00.000Z"),
+          updatedAt: new Date("2026-04-06T12:01:00.000Z"),
+        }),
+      ],
+      timelineEvents: [],
+      linkedRuns: [],
+      liveRuns: [],
+      currentUserId: "user-1",
+    });
+
+    const secondStable = stabilizeThreadMessages(
+      secondPass,
+      firstStable.messages,
+      firstStable.cache,
+    );
+
+    expect(secondStable.messages).toHaveLength(2);
+    expect(secondStable.messages[0]).toBe(firstStable.messages[0]);
+    expect(secondStable.messages[1]?.id).toBe("comment-2");
+  });
+
+  it("reuses the previous array when nothing semantically changed", () => {
+    const firstPass = buildIssueChatMessages({
+      comments: [createComment()],
+      timelineEvents: [],
+      linkedRuns: [],
+      liveRuns: [],
+      currentUserId: "user-1",
+    });
+
+    const firstStable = stabilizeThreadMessages(firstPass, [], new Map());
+    const secondPass = buildIssueChatMessages({
+      comments: [createComment()],
+      timelineEvents: [],
+      linkedRuns: [],
+      liveRuns: [],
+      currentUserId: "user-1",
+    });
+
+    const secondStable = stabilizeThreadMessages(
+      secondPass,
+      firstStable.messages,
+      firstStable.cache,
+    );
+
+    expect(secondStable.messages).toBe(firstStable.messages);
   });
 });
