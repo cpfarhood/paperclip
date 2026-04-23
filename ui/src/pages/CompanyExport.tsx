@@ -18,6 +18,14 @@ import { companiesApi } from "../api/companies";
 import { projectsApi } from "../api/projects";
 import { Button } from "@/components/ui/button";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { MarkdownBody } from "../components/MarkdownBody";
@@ -605,6 +613,7 @@ export function CompanyExport() {
   const [checkedFiles, setCheckedFiles] = useState<Set<string>>(new Set());
   const [treeSearch, setTreeSearch] = useState("");
   const [includeSecrets, setIncludeSecrets] = useState(false);
+  const [secretsConfirmOpen, setSecretsConfirmOpen] = useState(false);
   const [taskLimit, setTaskLimit] = useState(TASKS_PAGE_SIZE);
   const savedExpandedRef = useRef<Set<string> | null>(null);
   const initialFileFromUrl = useRef(filePathFromLocation(location.pathname));
@@ -961,9 +970,21 @@ export function CompanyExport() {
             <div className="flex items-center gap-2 text-sm">
               <ToggleSwitch
                 checked={includeSecrets}
-                onCheckedChange={setIncludeSecrets}
+                onCheckedChange={(checked) => {
+                  if (checked) {
+                    setSecretsConfirmOpen(true);
+                  } else {
+                    setIncludeSecrets(false);
+                  }
+                }}
               />
-              <span className="cursor-pointer text-muted-foreground hover:text-foreground transition-colors" onClick={() => setIncludeSecrets(!includeSecrets)}>
+              <span className="cursor-pointer text-muted-foreground hover:text-foreground transition-colors" onClick={() => {
+                if (includeSecrets) {
+                  setIncludeSecrets(false);
+                } else {
+                  setSecretsConfirmOpen(true);
+                }
+              }}>
                 Include secrets
               </span>
               {includeSecrets && (
@@ -1039,6 +1060,26 @@ export function CompanyExport() {
           <ExportPreviewPane selectedFile={selectedFile} content={previewContent} allFiles={effectiveFiles} onSkillClick={handleSkillClick} />
         </div>
       </div>
+
+      {/* Secrets confirmation dialog */}
+      <Dialog open={secretsConfirmOpen} onOpenChange={setSecretsConfirmOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Include secrets?</DialogTitle>
+            <DialogDescription>
+              Secrets will be exported as plaintext in the package file. Handle the exported package with care.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setSecretsConfirmOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={() => { setIncludeSecrets(true); setSecretsConfirmOpen(false); }}>
+              Include secrets
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
