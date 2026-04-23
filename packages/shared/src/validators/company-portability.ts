@@ -20,6 +20,9 @@ export const portabilityEnvInputSchema = z.object({
   requirement: z.enum(["required", "optional"]),
   defaultValue: z.string().nullable(),
   portability: z.enum(["portable", "system_dependent"]),
+  secretName: z.string().min(1).nullable().optional(),
+  secretProvider: z.string().min(1).nullable().optional(),
+  type: z.enum(["secret_ref", "plain"]).optional(),
 });
 
 export const portabilityFileEntrySchema = z.union([

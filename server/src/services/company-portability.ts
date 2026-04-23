@@ -472,9 +472,6 @@ async function extractPortableScopedEnvInputs(
       const portability = defaultValue && isAbsoluteCommand(defaultValue)
         ? "system_dependent"
         : "portable";
-      if (portability === "system_dependent") {
-        warnings.push(`${scope.warningPrefix} env ${key} default was exported as system-dependent.`);
-      }
       inputs.push({
         key,
         description: `Optional default for ${key} on ${scope.label}`,
@@ -490,9 +487,6 @@ async function extractPortableScopedEnvInputs(
 
     if (typeof binding === "string") {
       const portability = isAbsoluteCommand(binding) ? "system_dependent" : "portable";
-      if (portability === "system_dependent") {
-        warnings.push(`${scope.warningPrefix} env ${key} default was exported as system-dependent.`);
-      }
       inputs.push({
         key,
         description: `Optional default for ${key} on ${scope.label}`,
