@@ -1071,7 +1071,7 @@ export function CompanyExport() {
             <Button variant="ghost" onClick={() => setSecretsConfirmOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={() => { setIncludeSecrets(true); setSecretsConfirmOpen(false); }}>
+            <Button variant="destructive" onClick={() => { setIncludeSecrets(true); setSecretsConfirmOpen(false); }}>
               Include secrets
             </Button>
           </DialogFooter>
