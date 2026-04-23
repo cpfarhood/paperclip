@@ -987,9 +987,6 @@ export function CompanyExport() {
               }}>
                 Include secrets
               </span>
-              {includeSecrets && (
-                <span className="text-xs text-amber-500">(secrets exported as plaintext)</span>
-              )}
             </div>
           </div>
           <Button
