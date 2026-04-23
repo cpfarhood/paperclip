@@ -52,7 +52,7 @@ import {
 } from "@paperclipai/adapter-utils/server-utils";
 import { ensureOpenCodeModelConfiguredAndAvailable } from "@paperclipai/adapter-opencode-local/server";
 import { findServerAdapter } from "../adapters/index.js";
-import { conflict, forbidden, HttpError, notFound, unprocessable } from "../errors.js";
+import { forbidden, HttpError, notFound, unprocessable } from "../errors.js";
 import { ghFetch, gitHubApiBase, resolveRawGitHubUrl } from "./github-fetch.js";
 import type { StorageService } from "../storage/types.js";
 import { accessService } from "./access.js";
@@ -4214,6 +4214,8 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
           const existing = await secrets.getByName(targetCompany.id, secretEntry.name);
           if (existing) {
             secretNameToId.set(secretEntry.name, existing.id);
+          } else {
+            warnings.push(`Secret "${secretEntry.name}" already exists but could not be resolved by name. Re-add env bindings for this secret manually.`);
           }
         } else {
           warnings.push(`Failed to create secret "${secretEntry.name}": ${err instanceof Error ? err.message : String(err)}`);
