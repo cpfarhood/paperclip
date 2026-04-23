@@ -957,14 +957,6 @@ export function CompanyExport() {
                 {warnings.length} warning{warnings.length === 1 ? "" : "s"}
               </span>
             )}
-            {includeSecrets && (() => {
-              const secretCount = new Set(exportData?.manifest.envInputs?.filter((e) => e.kind === "secret" && e.secretName).map((e) => e.secretName)).size;
-              return secretCount > 0 ? (
-                <span className="rounded-md border border-amber-500/30 bg-amber-500/5 px-2 py-0.5 text-xs text-amber-500">
-                  {secretCount} secret{secretCount === 1 ? "" : "s"} will be included
-                </span>
-              ) : null;
-            })()}
           </div>
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2 text-sm">
@@ -987,6 +979,14 @@ export function CompanyExport() {
               }}>
                 Include secrets
               </span>
+              {includeSecrets && (() => {
+                const secretCount = new Set(exportData?.manifest.envInputs?.filter((e) => e.kind === "secret" && e.secretName).map((e) => e.secretName)).size;
+                return secretCount > 0 ? (
+                  <span className="rounded-md border border-amber-500/30 bg-amber-500/5 px-2 py-0.5 text-xs text-amber-500">
+                    {secretCount} secret{secretCount === 1 ? "" : "s"}
+                  </span>
+                ) : null;
+              })()}
             </div>
           </div>
           <Button
