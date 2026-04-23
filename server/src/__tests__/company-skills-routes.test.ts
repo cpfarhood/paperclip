@@ -14,6 +14,8 @@ const mockAccessService = vi.hoisted(() => ({
 const mockCompanySkillService = vi.hoisted(() => ({
   importFromSource: vi.fn(),
   deleteSkill: vi.fn(),
+  updateSkillAuth: vi.fn(),
+  deleteBySource: vi.fn(),
 }));
 
 const mockLogActivity = vi.hoisted(() => vi.fn());
@@ -300,6 +302,139 @@ describe("company skill mutation permissions", () => {
       "company-1",
       "https://github.com/vercel-labs/agent-browser",
       undefined,
+    );
+  });
+
+  it("passes a PAT through skill import requests", async () => {
+    const res = await request(await createApp({
+      type: "board",
+      userId: "local-board",
+      companyIds: ["company-1"],
+      source: "local_implicit",
+      isInstanceAdmin: false,
+    }))
+      .post("/api/companies/company-1/skills/import")
+      .send({
+        source: "https://github.com/vercel-labs/agent-browser",
+        authToken: "ghp_private_token",
+      });
+
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    expect(mockCompanySkillService.importFromSource).toHaveBeenCalledWith(
+      "company-1",
+      "https://github.com/vercel-labs/agent-browser",
+      "ghp_private_token",
+    );
+  });
+
+  it("updates a skill auth token", async () => {
+    mockCompanySkillService.updateSkillAuth.mockResolvedValue({
+      id: "skill-1",
+      slug: "find-skills",
+    });
+
+    const res = await request(await createApp({
+      type: "board",
+      userId: "local-board",
+      companyIds: ["company-1"],
+      source: "local_implicit",
+      isInstanceAdmin: false,
+    }))
+      .patch("/api/companies/company-1/skills/skill-1/auth")
+      .send({ authToken: "ghp_private_token" });
+
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(mockCompanySkillService.updateSkillAuth).toHaveBeenCalledWith(
+      "company-1",
+      "skill-1",
+      "ghp_private_token",
+    );
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        companyId: "company-1",
+        action: "company.skill_auth_updated",
+        entityType: "company_skill",
+        entityId: "skill-1",
+        details: { slug: "find-skills" },
+      }),
+    );
+  });
+
+  it("clears a skill auth token", async () => {
+    mockCompanySkillService.updateSkillAuth.mockResolvedValue({
+      id: "skill-1",
+      slug: "find-skills",
+    });
+
+    const res = await request(await createApp({
+      type: "board",
+      userId: "local-board",
+      companyIds: ["company-1"],
+      source: "local_implicit",
+      isInstanceAdmin: false,
+    }))
+      .patch("/api/companies/company-1/skills/skill-1/auth")
+      .send({ authToken: null });
+
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(mockCompanySkillService.updateSkillAuth).toHaveBeenCalledWith(
+      "company-1",
+      "skill-1",
+      null,
+    );
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        companyId: "company-1",
+        action: "company.skill_auth_removed",
+        entityType: "company_skill",
+        entityId: "skill-1",
+        details: { slug: "find-skills" },
+      }),
+    );
+  });
+
+  it("deletes skills by source", async () => {
+    mockCompanySkillService.deleteBySource.mockResolvedValue([
+      {
+        id: "skill-1",
+        slug: "find-skills",
+      },
+      {
+        id: "skill-2",
+        slug: "browser-search",
+      },
+    ]);
+
+    const res = await request(await createApp({
+      type: "board",
+      userId: "local-board",
+      companyIds: ["company-1"],
+      source: "local_implicit",
+      isInstanceAdmin: false,
+    }))
+      .delete("/api/companies/company-1/skills/by-source")
+      .query({ source: "https://github.com/vercel-labs/agent-browser" });
+
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(mockCompanySkillService.deleteBySource).toHaveBeenCalledWith(
+      "company-1",
+      "https://github.com/vercel-labs/agent-browser",
+    );
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        companyId: "company-1",
+        action: "company.skills_source_deleted",
+        entityType: "company",
+        entityId: "company-1",
+        details: {
+          sourceLocator: "https://github.com/vercel-labs/agent-browser",
+          deletedCount: 2,
+          deletedSlugs: ["find-skills", "browser-search"],
+        },
+      }),
     );
   });
 
