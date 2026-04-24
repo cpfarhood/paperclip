@@ -436,7 +436,7 @@ const _logFlushInterval = setInterval(() => {
 }, LOG_BUFFER_FLUSH_INTERVAL_MS);
 
 // Allow the interval to be unref'd so it doesn't keep the process alive in tests.
-if (_logFlushInterval.unref) _logFlushInterval.unref();
+if (process.env.NODE_ENV !== "production" && _logFlushInterval.unref) _logFlushInterval.unref();
 
 /**
  * buildHostServices — creates a concrete implementation of the `HostServices`
