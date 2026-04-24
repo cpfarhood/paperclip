@@ -1583,12 +1583,17 @@ async function terminateHeartbeatRunProcess(input: {
   const processGroupId = input.processGroupId ?? null;
   if (typeof pid !== "number" && typeof processGroupId !== "number") return;
 
+  const effectivePid =
+    typeof pid === "number" && Number.isInteger(pid) && pid > 0
+      ? pid
+      : typeof processGroupId === "number" && Number.isInteger(processGroupId) && processGroupId > 0
+        ? processGroupId
+        : null;
+  if (effectivePid === null) return;
+
   await terminateLocalService(
     {
-      pid:
-        typeof pid === "number" && Number.isInteger(pid) && pid > 0
-          ? pid
-          : (processGroupId ?? 0),
+      pid: effectivePid,
       processGroupId:
         typeof processGroupId === "number" && Number.isInteger(processGroupId) && processGroupId > 0
           ? processGroupId
