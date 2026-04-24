@@ -399,7 +399,7 @@ export async function createApp(
       });
     }, FEEDBACK_EXPORT_FLUSH_INTERVAL_MS)
     : null;
-  feedbackExportTimer?.unref?.();
+  if (process.env.NODE_ENV !== "production") feedbackExportTimer?.unref?.();
   if (opts.feedbackExportService) {
     void opts.feedbackExportService.flushPendingFeedbackTraces().catch((err) => {
       logger.error({ err }, "Failed to flush pending feedback exports");
