@@ -5831,18 +5831,26 @@ export function heartbeatService(db: Db) {
     if (run.status !== "running" && run.status !== "queued") return run;
     const agent = await getAgent(run.agentId);
 
-    const running = runningProcesses.get(run.id);
-    if (running) {
-      await terminateHeartbeatRunProcess({
-        pid: running.child.pid ?? run.processPid,
-        processGroupId: running.processGroupId ?? run.processGroupId,
-        graceMs: Math.max(1, running.graceSec) * 1000,
-      });
-    } else if (run.processPid || run.processGroupId) {
-      await terminateHeartbeatRunProcess({
-        pid: run.processPid,
-        processGroupId: run.processGroupId,
-      });
+    // Kill the process FIRST so the concurrency slot doesn't open while the
+    // old process is still alive.  Wrap in try/finally so the DB status is
+    // always persisted even if termination throws or the server crashes
+    // between kill and status write (the reaper will clean up in that case).
+    try {
+      const running = runningProcesses.get(run.id);
+      if (running) {
+        await terminateHeartbeatRunProcess({
+          pid: running.child.pid ?? run.processPid,
+          processGroupId: running.processGroupId ?? run.processGroupId,
+          graceMs: Math.max(1, running.graceSec) * 1000,
+        });
+      } else if (run.processPid || run.processGroupId) {
+        await terminateHeartbeatRunProcess({
+          pid: run.processPid,
+          processGroupId: run.processGroupId,
+        });
+      }
+    } catch (err) {
+      logger.warn({ err, runId }, "Failed to terminate process during cancel");
     }
 
     const cancelled = await setRunStatus(run.id, "cancelled", {
