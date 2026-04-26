@@ -7221,8 +7221,28 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
     if (!CANCELLABLE_HEARTBEAT_RUN_STATUSES.includes(run.status as (typeof CANCELLABLE_HEARTBEAT_RUN_STATUSES)[number])) return run;
     const agent = await getAgent(run.agentId);
 
-    // Persist cancelled status BEFORE killing the process so that a crash
-    // during termination cannot leave the run stuck in "running" forever.
+    // Kill the process FIRST so the concurrency slot doesn't open while the
+    // old process is still alive.  Wrap in try/finally so the DB status is
+    // always persisted even if termination throws or the server crashes
+    // between kill and status write (the reaper will clean up in that case).
+    try {
+      const running = runningProcesses.get(run.id);
+      if (running) {
+        await terminateHeartbeatRunProcess({
+          pid: running.child.pid ?? run.processPid,
+          processGroupId: running.processGroupId ?? run.processGroupId,
+          graceMs: Math.max(1, running.graceSec) * 1000,
+        });
+      } else if (run.processPid || run.processGroupId) {
+        await terminateHeartbeatRunProcess({
+          pid: run.processPid,
+          processGroupId: run.processGroupId,
+        });
+      }
+    } catch (err) {
+      logger.warn({ err, runId }, "Failed to terminate process during cancel");
+    }
+
     const cancelled = await setRunStatus(run.id, "cancelled", {
       finishedAt: new Date(),
       error: reason,
@@ -7240,25 +7260,6 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       finishedAt: new Date(),
       error: reason,
     });
-
-    // Kill the process after the DB is updated — failures here are non-fatal.
-    try {
-      const running = runningProcesses.get(run.id);
-      if (running) {
-        await terminateHeartbeatRunProcess({
-          pid: running.child.pid ?? run.processPid,
-          processGroupId: running.processGroupId ?? run.processGroupId,
-          graceMs: Math.max(1, running.graceSec) * 1000,
-        });
-      } else if (run.processPid || run.processGroupId) {
-        await terminateHeartbeatRunProcess({
-          pid: run.processPid,
-          processGroupId: run.processGroupId,
-        });
-      }
-    } catch (err) {
-      logger.warn({ err, runId }, "Failed to terminate process during cancel — status already persisted");
-    }
 
     if (cancelled) {
       await appendRunEvent(cancelled, 1, {
