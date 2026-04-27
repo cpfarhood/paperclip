@@ -1742,6 +1742,7 @@ export function heartbeatService(db: Db) {
   const executionWorkspacesSvc = executionWorkspaceService(db);
   const workspaceOperationsSvc = workspaceOperationService(db);
   const activeRunExecutions = new Set<string>();
+  const lastUpdatedAtRefresh = new Map<string, number>();
   const budgetHooks = {
     cancelWorkForScope: cancelBudgetScopeWork,
   };
@@ -4620,6 +4621,18 @@ export function heartbeatService(db: Db) {
             truncated: payloadChunk.length !== sanitizedChunk.length,
           },
         });
+
+        if (adapterHasOutOfProcessLiveness(agent.adapterType)) {
+          const now = Date.now();
+          const last = lastUpdatedAtRefresh.get(run.id) ?? 0;
+          if (now - last >= 60_000) {
+            lastUpdatedAtRefresh.set(run.id, now);
+            await db
+              .update(heartbeatRuns)
+              .set({ updatedAt: new Date(now) })
+              .where(eq(heartbeatRuns.id, run.id));
+          }
+        }
       };
       if (runScopedMentionedSkillKeys.length > 0) {
         await onLog(
@@ -5073,6 +5086,7 @@ export function heartbeatService(db: Db) {
         } finally {
           await releaseRuntimeServicesForRun(run.id).catch(() => undefined);
           activeRunExecutions.delete(run.id);
+          lastUpdatedAtRefresh.delete(run.id);
           await startNextQueuedRunForAgent(run.agentId);
         }
   }
