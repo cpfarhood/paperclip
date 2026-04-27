@@ -1558,6 +1558,21 @@ function isTrackedLocalChildProcessAdapter(adapterType: string) {
   return SESSIONED_LOCAL_ADAPTERS.has(adapterType);
 }
 
+// Adapters that drive execution out-of-process (Kubernetes Jobs, remote HTTP
+// services, etc.) declare `hasOutOfProcessLiveness: true`. For these, the
+// reaper has no meaningful local pid to probe, so it must skip pid/process-
+// group checks, give the adapter a chance to re-establish liveness at
+// startup, and emit a K8s-aware error code/message when it does reap.
+function adapterHasOutOfProcessLiveness(adapterType: string) {
+  const adapter = getServerAdapter(adapterType);
+  return adapter.hasOutOfProcessLiveness === true;
+}
+
+function buildAdapterLivenessLostMessage(adapterType: string, staleThresholdMs: number) {
+  const staleSec = Math.round(staleThresholdMs / 1000);
+  return `Adapter ${adapterType} liveness lost -- no run activity for over ${staleSec}s (out-of-process adapter; local pid not applicable)`;
+}
+
 // A positive liveness check means some process currently owns the PID.
 // On Linux, PIDs can be recycled, so this is a best-effort signal rather
 // than proof that the original child is still alive.
@@ -3461,6 +3476,65 @@ export function heartbeatService(db: Db) {
       if (staleThresholdMs > 0) {
         const refTime = run.updatedAt ? new Date(run.updatedAt).getTime() : 0;
         if (now.getTime() - refTime < staleThresholdMs) continue;
+      }
+
+      // Out-of-process adapters (k8s-backed, remote HTTP, etc.) have no local
+      // pid. Take a separate path that (1) defers to adapter-driven activity
+      // at cold startup so still-running K8s Jobs survive a server restart,
+      // and (2) emits an adapter-aware error code/message when we do reap so
+      // operators don't see the confusing "child pid -1" sentinel.
+      if (adapterHasOutOfProcessLiveness(adapterType)) {
+        // Cold-startup sweep (staleThresholdMs === 0) has no timing signal
+        // and would otherwise kill every out-of-process run on every restart.
+        // Skip here; the periodic 5-minute reaper (and the adapter's own
+        // keepalive refresh of updatedAt) will catch genuinely dead runs.
+        if (staleThresholdMs <= 0) continue;
+
+        const livenessMessage = buildAdapterLivenessLostMessage(adapterType, staleThresholdMs);
+
+        let finalizedRun = await setRunStatus(run.id, "failed", {
+          error: livenessMessage,
+          errorCode: "adapter_liveness_lost",
+          finishedAt: now,
+          resultJson: mergeRunStopMetadataForAgent(
+            { adapterType, adapterConfig },
+            "failed",
+            {
+              resultJson: parseObject(run.resultJson),
+              errorCode: "adapter_liveness_lost",
+              errorMessage: livenessMessage,
+            },
+          ),
+        });
+        await setWakeupStatus(run.wakeupRequestId, "failed", {
+          finishedAt: now,
+          error: livenessMessage,
+        });
+        if (!finalizedRun) finalizedRun = await getRun(run.id);
+        if (!finalizedRun) continue;
+        finalizedRun = await classifyAndPersistRunLiveness(finalizedRun, parseObject(finalizedRun.resultJson)) ?? finalizedRun;
+
+        // No process_lost retry for out-of-process adapters: the loss has
+        // nothing to do with a local child pid disappearing, so retrying
+        // blindly is the wrong behavior.
+        await releaseIssueExecutionAndPromote(finalizedRun);
+
+        await appendRunEvent(finalizedRun, await nextRunEventSeq(finalizedRun.id), {
+          eventType: "lifecycle",
+          stream: "system",
+          level: "error",
+          message: livenessMessage,
+          payload: {
+            adapterType,
+            staleThresholdMs,
+          },
+        });
+
+        await finalizeAgentStatus(run.agentId, "failed");
+        await startNextQueuedRunForAgent(run.agentId);
+        runningProcesses.delete(run.id);
+        reaped.push(run.id);
+        continue;
       }
 
       const tracksLocalChild = isTrackedLocalChildProcessAdapter(adapterType);

@@ -51,13 +51,18 @@ vi.mock("@paperclipai/shared/telemetry", async () => {
   };
 });
 
+const OUT_OF_PROCESS_LIVENESS_ADAPTER_TYPE = "test_k8s_out_of_process";
+
 vi.mock("../adapters/index.ts", async () => {
   const actual = await vi.importActual<typeof import("../adapters/index.ts")>("../adapters/index.ts");
   return {
     ...actual,
-    getServerAdapter: vi.fn(() => ({
+    getServerAdapter: vi.fn((adapterType?: string) => ({
       supportsLocalAgentJwt: false,
       execute: mockAdapterExecute,
+      // Used by heartbeat.ts adapterHasOutOfProcessLiveness() to identify
+      // k8s-style / remote adapters that should not be probed via local pid.
+      hasOutOfProcessLiveness: adapterType === OUT_OF_PROCESS_LIVENESS_ADAPTER_TYPE,
     })),
   };
 });
@@ -572,6 +577,105 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
       .then((rows) => rows[0] ?? null);
     expect(issue?.executionRunId).toBeNull();
     expect(issue?.checkoutRunId).toBe(runId);
+  });
+
+  // --- FAR-108: out-of-process adapter (e.g. claude_k8s) liveness ----------
+  //
+  // These cover the reaper path for adapters that declare
+  // `hasOutOfProcessLiveness: true`. The adapter mock at the top of this file
+  // reports that flag for OUT_OF_PROCESS_LIVENESS_ADAPTER_TYPE.
+
+  it("does not reap out-of-process adapter runs on cold startup (staleThresholdMs === 0)", async () => {
+    // Even with no local pid/processGroupId (classic k8s case — run is a
+    // Kubernetes Job, not a child process), the cold-startup sweep must not
+    // kill the run. The adapter needs a window to refresh updatedAt via its
+    // own polling.
+    const { runId } = await seedRunFixture({
+      adapterType: OUT_OF_PROCESS_LIVENESS_ADAPTER_TYPE,
+      processPid: null,
+      processGroupId: null,
+    });
+    const heartbeat = heartbeatService(db);
+
+    const result = await heartbeat.reapOrphanedRuns();
+    expect(result.reaped).toBe(0);
+
+    const run = await heartbeat.getRun(runId);
+    expect(run?.status).toBe("running");
+    // The misleading "child pid -1" process-loss sentinel must NOT appear
+    // for out-of-process adapters at startup.
+    expect(run?.errorCode).not.toBe("process_lost");
+    expect(run?.error ?? "").not.toContain("child pid");
+
+    // Mark the run terminal so the afterEach cleanup loop does not spin the
+    // full 100-iteration timeout waiting for it to settle.
+    await db
+      .update(heartbeatRuns)
+      .set({ status: "failed" })
+      .where(eq(heartbeatRuns.id, runId));
+  });
+
+  it("reaps stale out-of-process adapter runs with adapter_liveness_lost (no process_lost retry)", async () => {
+    const { agentId, runId, issueId } = await seedRunFixture({
+      adapterType: OUT_OF_PROCESS_LIVENESS_ADAPTER_TYPE,
+      processPid: null,
+      processGroupId: null,
+    });
+    const heartbeat = heartbeatService(db);
+
+    // Force staleness past the threshold. The seed sets updatedAt to
+    // 2026-03-19T00:00:00Z, so 10 minutes is well beyond the 5-minute
+    // periodic-reaper window.
+    const result = await heartbeat.reapOrphanedRuns({ staleThresholdMs: 10 * 60 * 1000 });
+    expect(result.reaped).toBe(1);
+    expect(result.runIds).toEqual([runId]);
+
+    const runs = await db
+      .select()
+      .from(heartbeatRuns)
+      .where(eq(heartbeatRuns.agentId, agentId));
+    // Out-of-process adapters MUST NOT get the process_lost retry -- local
+    // pid disappearing has nothing to do with a remote Job dying.
+    expect(runs).toHaveLength(1);
+
+    const failedRun = runs[0];
+    expect(failedRun?.id).toBe(runId);
+    expect(failedRun?.status).toBe("failed");
+    expect(failedRun?.errorCode).toBe("adapter_liveness_lost");
+    expect(failedRun?.error ?? "").toContain("Adapter");
+    expect(failedRun?.error ?? "").toContain("liveness lost");
+    // Confirm the confusing local-pid wording is gone.
+    expect(failedRun?.error ?? "").not.toContain("child pid");
+    expect(failedRun?.resultJson).toMatchObject({
+      stopReason: "adapter_liveness_lost",
+    });
+
+    const issue = await db
+      .select()
+      .from(issues)
+      .where(eq(issues.id, issueId))
+      .then((rows) => rows[0] ?? null);
+    expect(issue?.executionRunId).toBeNull();
+  });
+
+  it("keeps local-child-process adapters on the process_lost path even when they share no pid", async () => {
+    // Regression guard: the new out-of-process branch must be gated strictly
+    // on the capability flag. A local adapter with no recorded pid still
+    // reaches the classic process-loss path (status failed, errorCode
+    // process_lost), not the adapter_liveness_lost path.
+    const { runId } = await seedRunFixture({
+      adapterType: "codex_local",
+      processPid: null,
+      processGroupId: null,
+    });
+    const heartbeat = heartbeatService(db);
+
+    const result = await heartbeat.reapOrphanedRuns();
+    expect(result.reaped).toBe(1);
+
+    const run = await heartbeat.getRun(runId);
+    expect(run?.status).toBe("failed");
+    expect(run?.errorCode).toBe("process_lost");
   });
 
   it("clears the detached warning when the run reports activity again", async () => {
