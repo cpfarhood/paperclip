@@ -4623,6 +4623,9 @@ export function heartbeatService(db: Db) {
         });
 
         if (adapterHasOutOfProcessLiveness(agent.adapterType)) {
+          // Throttle must stay well below the reaper's 5-minute stale threshold
+          // — raising it to ≥ the reaper window would let live runs be reaped
+          // between refreshes.
           const now = Date.now();
           const last = lastUpdatedAtRefresh.get(run.id) ?? 0;
           if (now - last >= 60_000) {
@@ -5920,9 +5923,9 @@ export function heartbeatService(db: Db) {
     const agent = await getAgent(run.agentId);
 
     // Kill the process FIRST so the concurrency slot doesn't open while the
-    // old process is still alive.  Wrap in try/finally so the DB status is
-    // always persisted even if termination throws or the server crashes
-    // between kill and status write (the reaper will clean up in that case).
+    // old process is still alive.  Wrap in try/catch so the DB status is
+    // always persisted even if termination throws (the reaper will clean up
+    // if the server crashes between kill and status write).
     try {
       const running = runningProcesses.get(run.id);
       if (running) {
