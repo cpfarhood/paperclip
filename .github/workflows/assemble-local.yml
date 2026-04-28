@@ -63,7 +63,6 @@ jobs:
           PR_CHERRY_PICK=(
             "3237 skill-pat-feature"
             "3351 skill-scan-refresh exclude:skill-pat-feature"
-            "3490 fix/adapter-plugin-concurrency-clean"
             "3640 feat/plugin-tool-events"
             "4162 fix/far-108-k8s-adapter-reaper-liveness"
           )
