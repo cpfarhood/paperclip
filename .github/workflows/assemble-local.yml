@@ -83,7 +83,12 @@ jobs:
               continue
             fi
 
-            mapfile -t commits < <(git log --no-merges --reverse --format="%H" upstream/master.."$remote_branch" $exclude_arg)
+            # Exclude commits already on origin/master (fork-overlay/CI infra
+            # that landed on master via the .farhoodlabs/ overlay path). PR
+            # branches sometimes pull these in via `git merge origin/master`,
+            # but cherry-picking them onto `local` (which is already master)
+            # is redundant and produces conflicts on the assemble-local file.
+            mapfile -t commits < <(git log --no-merges --reverse --format="%H" upstream/master.."$remote_branch" ^origin/master $exclude_arg)
 
             if [ ${#commits[@]} -eq 0 ]; then
               echo "PR #$pr_num ($branch): no unique commits — likely merged upstream, skipping"
