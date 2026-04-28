@@ -93,6 +93,17 @@ jobs:
             echo "PR #$pr_num ($branch): cherry-picking ${#commits[@]} commit(s)"
             for sha in "${commits[@]}"; do
               git cherry-pick "$sha" || {
+                # If the cherry-pick produced an empty result (commit's content
+                # is already in HEAD via auto-merge), skip it instead of failing.
+                # State signature: CHERRY_PICK_HEAD set, no unmerged paths,
+                # nothing staged.
+                if [ -f .git/CHERRY_PICK_HEAD ] \
+                  && [ -z "$(git diff --name-only --diff-filter=U)" ] \
+                  && git diff --staged --quiet; then
+                  echo "PR #$pr_num: $sha became empty after merge, skipping"
+                  git cherry-pick --skip
+                  continue
+                fi
                 echo "::error::Cherry-pick conflict at $sha from PR #$pr_num ($branch)"
                 echo "::error::Resolve the conflict, force-push the branch, then re-run this workflow"
                 git cherry-pick --abort
