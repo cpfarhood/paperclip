@@ -47,10 +47,26 @@ ARG USER_UID=1000
 ARG USER_GID=1000
 WORKDIR /app
 COPY --chown=node:node --from=build /app /app
-RUN npm install --global --omit=dev @anthropic-ai/claude-code@latest @openai/codex@latest opencode-ai \
-  && apt-get update \
-  && apt-get install -y --no-install-recommends openssh-client jq \
+# Fork additions: kubectl, kubeseal, uv, forgejo CLIs, editor tools
+# Upstream installs: claude-code, codex, opencode-ai, openssh-client, jq
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends openssh-client jq nano vim \
   && rm -rf /var/lib/apt/lists/* \
+  && curl -fsSL https://dl.k8s.io/release/v1.32.0/bin/linux/amd64/kubectl -o /usr/local/bin/kubectl \
+  && chmod +x /usr/local/bin/kubectl \
+  && curl -fsSL https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.36.6/kubeseal-0.36.6-linux-amd64.tar.gz | tar -xzf - -C /tmp \
+  && mv /tmp/kubeseal /usr/local/bin/kubeseal \
+  && rm -rf /tmp/kubeseal /tmp/LICENSE /tmp/README.md \
+  && curl -LsSf https://astral.sh/uv/install.sh | sh \
+  && mv /root/.local/bin/uv /usr/local/bin/uv \
+  && mv /root/.local/bin/uvx /usr/local/bin/uvx \
+  && curl -fsSL https://codeberg.org/forgejo-contrib/forgejo-cli/releases/download/v0.4.1/forgejo-cli-linux.tar.gz | tar -xzf - -C /usr/local/bin \
+  && chmod +x /usr/local/bin/fj \
+  && curl -fsSL https://github.com/JKamsker/forgejo-cli-ex/releases/download/v0.1.7/fj-ex-linux-x86_64.tar.gz | tar -xzf - -C /usr/local/bin \
+  && chmod +x /usr/local/bin/fj-ex \
+  && curl -fsSL https://codeberg.org/romaintb/fgj/releases/download/v0.3.0/fgj_linux_amd64 -o /usr/local/bin/fgj \
+  && chmod +x /usr/local/bin/fgj \
+  && npm install --global --omit=dev @anthropic-ai/claude-code@latest @openai/codex@latest opencode-ai \
   && mkdir -p /paperclip \
   && chown node:node /paperclip
 
