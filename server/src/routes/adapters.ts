@@ -25,11 +25,11 @@ import {
   findActiveServerAdapter,
   listEnabledServerAdapters,
   registerServerAdapter,
+  resolveExternalAdapterRegistration,
   unregisterServerAdapter,
   isOverridePaused,
   setOverridePaused,
 } from "../adapters/registry.js";
-import { getAdapterSessionManagement } from "@paperclipai/adapter-utils";
 import {
   listAdapterPlugins,
   addAdapterPlugin,
@@ -168,15 +168,17 @@ async function normalizeLocalPath(rawPath: string): Promise<string> {
 }
 
 /**
- * Register an adapter module into the server registry, filling in
- * sessionManagement from the host.
+ * Register an external adapter module into the server registry via the
+ * hot-install path, resolving `sessionManagement` identically to how the
+ * init-time IIFE does. Module-provided `sessionManagement` is honored first,
+ * with fallback to the host registry by type for builtin-type overrides.
+ *
+ * Keeps the hot-install and init-time paths at parity so an adapter installed
+ * via `POST /api/adapters/install` has the same shape in the registry as the
+ * same adapter loaded on the next server restart.
  */
 function registerWithSessionManagement(adapter: ServerAdapterModule): void {
-  const wrapped: ServerAdapterModule = {
-    ...adapter,
-    sessionManagement: getAdapterSessionManagement(adapter.type) ?? undefined,
-  };
-  registerServerAdapter(wrapped);
+  registerServerAdapter(resolveExternalAdapterRegistration(adapter));
 }
 
 // ---------------------------------------------------------------------------
@@ -234,7 +236,7 @@ export function adapterRoutes() {
 
     // Strip version suffix if the UI sends "pkg@1.2.3" instead of separating it
     // e.g. "@henkey/hermes-paperclip-adapter@0.3.0" → packageName + version
-    let canonicalName = packageName;
+    let canonicalName = packageName.trim();
     let explicitVersion = version;
     const versionSuffix = packageName.match(/@(\d+\.\d+\.\d+.*)$/);
     if (versionSuffix) {
@@ -570,10 +572,19 @@ export function adapterRoutes() {
 
       logger.info({ type, packageName: record.packageName }, "Reinstalling adapter package via npm");
 
-      await execFileAsync("npm", ["install", "--no-save", record.packageName], {
-        cwd: pluginsDir,
-        timeout: 120_000,
-      });
+      // Force npm to bypass its metadata cache and fetch from the registry.
+      // Without --prefer-online + an explicit @latest, npm sees the installed
+      // version still satisfies the (unspecified) range and short-circuits,
+      // leaving the on-disk package stale while reporting success.
+      const trimmedPackageName = record.packageName.trim();
+      await execFileAsync(
+        "npm",
+        ["install", "--no-save", "--prefer-online", `${trimmedPackageName}@latest`],
+        {
+          cwd: pluginsDir,
+          timeout: 120_000,
+        },
+      );
 
       // Reload the freshly installed adapter
       const newModule = await reloadExternalAdapter(type);
