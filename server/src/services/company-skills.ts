@@ -32,6 +32,7 @@ import { notFound, unprocessable } from "../errors.js";
 import { ghFetch, gitHubApiBase, isGitHubDotCom, resolveRawGitHubUrl } from "./github-fetch.js";
 import { agentService } from "./agents.js";
 import { projectService } from "./projects.js";
+import { secretService } from "./secrets.js";
 
 type CompanySkillRow = typeof companySkills.$inferSelect;
 type CompanySkillListDbRow = Pick<
@@ -1557,38 +1558,7 @@ function toCompanySkillListItem(skill: CompanySkillListRow, attachedAgentCount: 
 export function companySkillService(db: Db) {
   const agents = agentService(db);
   const projects = projectService(db);
-
-  /** Resolve the GitHub auth token from a skill's metadata, if stored. */
-  async function resolveSkillAuthToken(
-    companyId: string,
-    skill: { metadata: Record<string, unknown> | null },
-  ): Promise<string | undefined> {
-    const meta = skill.metadata;
-    if (!meta) return undefined;
-    const secretId = typeof meta.sourceAuthSecretId === "string" ? meta.sourceAuthSecretId.trim() : "";
-    if (!secretId) return undefined;
-    try {
-      return await secretsSvc.resolveSecretValue(companyId, secretId, "latest");
-    } catch {
-      return undefined;
-    }
-  }
-
-  /** Resolve the GitHub auth token from a skill's metadata, if stored. */
-  async function resolveSkillAuthToken(
-    companyId: string,
-    skill: { metadata: Record<string, unknown> | null },
-  ): Promise<string | undefined> {
-    const meta = skill.metadata;
-    if (!meta) return undefined;
-    const secretId = typeof meta.sourceAuthSecretId === "string" ? meta.sourceAuthSecretId.trim() : "";
-    if (!secretId) return undefined;
-    try {
-      return await secretsSvc.resolveSecretValue(companyId, secretId, "latest");
-    } catch {
-      return undefined;
-    }
-  }
+  const secretsSvc = secretService(db);
 
   /** Resolve the GitHub auth token from a skill's metadata, if stored. */
   async function resolveSkillAuthToken(
@@ -2619,8 +2589,8 @@ export function companySkillService(db: Db) {
     skillId: string,
     authToken: string | null,
   ): Promise<CompanySkill | null> {
-    const skill = await getById(skillId);
-    if (!skill || skill.companyId !== companyId) return null;
+    const skill = await getById(companyId, skillId);
+    if (!skill) return null;
 
     const meta = (skill.metadata ?? {}) as Record<string, unknown>;
     const existingSecretId = typeof meta.sourceAuthSecretId === "string" ? meta.sourceAuthSecretId : null;
