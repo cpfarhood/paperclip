@@ -260,7 +260,15 @@ export function adapterRoutes() {
 
         logger.info({ spec, pluginsDir }, "Installing adapter package via npm");
 
-        await execFileAsync("npm", ["install", "--no-save", spec], {
+        // --save-exact (not --no-save) so package.json tracks every installed
+        // adapter at its exact version. Without this, package.json drifts from
+        // the actually-installed set: subsequent `npm install` invocations
+        // (e.g. on pod restart) re-resolve old constraints and either prune
+        // unlisted plugins or downgrade upgraded ones — manifesting as "only
+        // the last installed plugin survives a restart". Pinning exact also
+        // makes upgrades explicit (via the Update button) instead of letting
+        // ^-ranges silently drift.
+        await execFileAsync("npm", ["install", "--save-exact", spec], {
           cwd: pluginsDir,
           timeout: 120_000,
         });
@@ -576,10 +584,13 @@ export function adapterRoutes() {
       // Without --prefer-online + an explicit @latest, npm sees the installed
       // version still satisfies the (unspecified) range and short-circuits,
       // leaving the on-disk package stale while reporting success.
+      // --save-exact (not --no-save) so package.json picks up the new version
+      // and pod restarts replay the upgrade instead of downgrading from the
+      // old constraint.
       const trimmedPackageName = record.packageName.trim();
       await execFileAsync(
         "npm",
-        ["install", "--no-save", "--prefer-online", `${trimmedPackageName}@latest`],
+        ["install", "--save-exact", "--prefer-online", `${trimmedPackageName}@latest`],
         {
           cwd: pluginsDir,
           timeout: 120_000,
