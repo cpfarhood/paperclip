@@ -572,10 +572,19 @@ export function adapterRoutes() {
 
       logger.info({ type, packageName: record.packageName }, "Reinstalling adapter package via npm");
 
-      await execFileAsync("npm", ["install", "--no-save", record.packageName.trim()], {
-        cwd: pluginsDir,
-        timeout: 120_000,
-      });
+      // Force npm to bypass its metadata cache and fetch from the registry.
+      // Without --prefer-online + an explicit @latest, npm sees the installed
+      // version still satisfies the (unspecified) range and short-circuits,
+      // leaving the on-disk package stale while reporting success.
+      const trimmedPackageName = record.packageName.trim();
+      await execFileAsync(
+        "npm",
+        ["install", "--no-save", "--prefer-online", `${trimmedPackageName}@latest`],
+        {
+          cwd: pluginsDir,
+          timeout: 120_000,
+        },
+      );
 
       // Reload the freshly installed adapter
       const newModule = await reloadExternalAdapter(type);
