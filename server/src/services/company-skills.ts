@@ -2127,6 +2127,28 @@ export function companySkillService(db: Db) {
       }
     }
 
+    const sourceLocators = new Set<string>();
+    for (const skill of acceptedSkills) {
+      if (skill.sourceType !== "github" && skill.sourceType !== "skills_sh") continue;
+      const locator = skill.sourceLocator ?? "";
+      if (locator) sourceLocators.add(locator);
+    }
+    for (const sourceLocator of sourceLocators) {
+      try {
+        const result = await readUrlSkillImports(companyId, sourceLocator, null);
+        for (const nextSkill of result.skills) {
+          if (acceptedSkills.some((s) => s.slug === nextSkill.slug)) continue;
+          const persisted = (await upsertImportedSkills(companyId, [nextSkill]))[0];
+          if (persisted) {
+            imported.push(persisted);
+            upsertAcceptedSkill(persisted);
+          }
+        }
+      } catch {
+        warnings.push(`Could not re-scan source ${sourceLocator} — skipping.`);
+      }
+    }
+
     return {
       scannedProjects: scannedProjectIds.size,
       scannedWorkspaces: scanTargets.length,
