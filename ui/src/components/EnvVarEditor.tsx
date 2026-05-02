@@ -215,7 +215,12 @@ export function EnvVarEditor({
               <>
                 <Textarea
                   rows={1}
-                  className={cn(inputClass, "flex-[3] min-h-0 resize-none shadow-none")}
+                  className={cn(
+                    inputClass,
+                    "flex-[3] min-h-0 resize-none shadow-none",
+                    "h-8 overflow-hidden field-sizing-fixed",
+                    "focus:h-auto focus:overflow-auto focus:field-sizing-content",
+                  )}
                   placeholder="value"
                   value={row.plainValue}
                   onChange={(event) => updateRow(index, { plainValue: event.target.value })}
