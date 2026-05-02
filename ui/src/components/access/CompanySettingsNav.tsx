@@ -7,6 +7,7 @@ const items = [
   { value: "environments", label: "Environments", href: "/company/settings/environments" },
   { value: "access", label: "Access", href: "/company/settings/access" },
   { value: "invites", label: "Invites", href: "/company/settings/invites" },
+  { value: "secrets", label: "Secrets", href: "/company/settings/secrets" },
 ] as const;
 
 type CompanySettingsTab = (typeof items)[number]["value"];
@@ -22,6 +23,10 @@ export function getCompanySettingsTab(pathname: string): CompanySettingsTab {
 
   if (pathname.includes("/company/settings/invites")) {
     return "invites";
+  }
+
+  if (pathname.includes("/company/settings/secrets")) {
+    return "secrets";
   }
 
   return "general";

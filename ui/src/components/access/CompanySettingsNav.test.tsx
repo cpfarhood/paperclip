@@ -82,6 +82,7 @@ describe("CompanySettingsNav", () => {
           { value: "environments", label: "Environments" },
           { value: "access", label: "Access" },
           { value: "invites", label: "Invites" },
+          { value: "secrets", label: "Secrets" },
         ],
       }),
     );
