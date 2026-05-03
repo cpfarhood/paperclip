@@ -22,4 +22,6 @@ export const secretsApi = {
     data: { name?: string; description?: string | null; externalRef?: string | null },
   ) => api.patch<CompanySecret>(`/secrets/${id}`, data),
   remove: (id: string) => api.delete<{ ok: true }>(`/secrets/${id}`),
+  usages: (id: string) =>
+    api.get<{ agents: { id: string; name: string; envKeys: string[] }[] }>(`/secrets/${id}/usages`),
 };

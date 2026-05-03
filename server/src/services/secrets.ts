@@ -5,6 +5,7 @@ import type { AgentEnvConfig, EnvBinding, SecretProvider } from "@paperclipai/sh
 import { envBindingSchema } from "@paperclipai/shared";
 import { conflict, notFound, unprocessable } from "../errors.js";
 import { getSecretProvider, listSecretProviders } from "../secrets/provider-registry.js";
+import { agentService } from "./agents.js";
 
 const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const SENSITIVE_ENV_KEY_RE =
@@ -44,12 +45,38 @@ export function secretService(db: Db) {
     fieldPath?: string;
   };
 
+  type SecretUsageAgent = { id: string; name: string; envKeys: string[] };
+
   async function getById(id: string) {
     return db
       .select()
       .from(companySecrets)
       .where(eq(companySecrets.id, id))
       .then((rows) => rows[0] ?? null);
+  }
+
+  async function usages(companyId: string, secretId: string): Promise<SecretUsageAgent[]> {
+    const agents = agentService(db);
+    const allAgents = await agents.list(companyId);
+    const out: SecretUsageAgent[] = [];
+    for (const agent of allAgents) {
+      const config = asRecord(agent.adapterConfig);
+      if (!config) continue;
+      const env = asRecord(config.env);
+      if (!env) continue;
+      const matchingKeys: string[] = [];
+      for (const [key, rawBinding] of Object.entries(env)) {
+        const binding = asRecord(rawBinding);
+        if (!binding) continue;
+        if (binding.type === "secret_ref" && binding.secretId === secretId) {
+          matchingKeys.push(key);
+        }
+      }
+      if (matchingKeys.length > 0) {
+        out.push({ id: agent.id, name: agent.name, envKeys: matchingKeys });
+      }
+    }
+    return out;
   }
 
   async function getByName(companyId: string, name: string) {
@@ -287,9 +314,19 @@ export function secretService(db: Db) {
     remove: async (secretId: string) => {
       const secret = await getById(secretId);
       if (!secret) return null;
+      const used = await usages(secret.companyId, secretId);
+      if (used.length > 0) {
+        const names = used.map((agent) => agent.name).sort((left, right) => left.localeCompare(right));
+        throw unprocessable(
+          `Cannot delete secret "${secret.name}" while it is still used by ${names.join(", ")}. Detach it from those agents first.`,
+          { secretId, usedByAgents: used },
+        );
+      }
       await db.delete(companySecrets).where(eq(companySecrets.id, secretId));
       return secret;
     },
+
+    usages,
 
     normalizeAdapterConfigForPersistence: async (
       companyId: string,

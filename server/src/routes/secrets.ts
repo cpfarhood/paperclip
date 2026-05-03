@@ -132,6 +132,19 @@ export function secretRoutes(db: Db) {
     res.json(updated);
   });
 
+  router.get("/secrets/:id/usages", async (req, res) => {
+    assertBoard(req);
+    const id = req.params.id as string;
+    const existing = await svc.getById(id);
+    if (!existing) {
+      res.status(404).json({ error: "Secret not found" });
+      return;
+    }
+    assertCompanyAccess(req, existing.companyId);
+    const agents = await svc.usages(existing.companyId, id);
+    res.json({ agents });
+  });
+
   router.delete("/secrets/:id", async (req, res) => {
     assertBoard(req);
     const id = req.params.id as string;
