@@ -126,11 +126,6 @@ export const secretsApi = {
   archive: (id: string) =>
     api.patch<CompanySecret>(`/secrets/${id}`, { status: "archived" satisfies SecretStatus }),
   remove: (id: string) => api.delete<{ ok: true }>(`/secrets/${id}`),
-  usages: (id: string) =>
-    api.get<{
-      agents: { id: string; name: string; envKeys: string[] }[];
-      skills: { id: string; name: string; slug: string }[];
-    }>(`/secrets/${id}/usages`),
   usage: (id: string) => api.get<SecretUsageResponse>(`/secrets/${id}/usage`),
   accessEvents: (id: string) => api.get<SecretAccessEvent[]>(`/secrets/${id}/access-events`),
   remoteImportPreview: (companyId: string, data: RemoteImportPreviewInput) =>

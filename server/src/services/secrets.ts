@@ -6,7 +6,6 @@ import {
   companySecretProviderConfigs,
   companySecrets,
   companySecretVersions,
-  companySkills,
   environments,
   heartbeatRuns,
   issues,
@@ -53,7 +52,6 @@ import type {
   SecretProviderWriteContext,
 } from "../secrets/types.js";
 import { isSecretProviderClientError } from "../secrets/types.js";
-import { agentService } from "./agents.js";
 
 const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const SENSITIVE_ENV_KEY_RE =
@@ -261,58 +259,12 @@ export function secretService(db: Db) {
     fieldPath?: string;
   };
 
-  type SecretUsageAgent = { id: string; name: string; envKeys: string[] };
-  type SecretUsageSkill = { id: string; name: string; slug: string };
-  type SecretUsages = { agents: SecretUsageAgent[]; skills: SecretUsageSkill[] };
-
   async function getById(id: string) {
     return db
       .select()
       .from(companySecrets)
       .where(eq(companySecrets.id, id))
       .then((rows) => rows[0] ?? null);
-  }
-
-  async function usages(companyId: string, secretId: string): Promise<SecretUsages> {
-    const agents = agentService(db);
-    const allAgents = await agents.list(companyId);
-    const agentRefs: SecretUsageAgent[] = [];
-    for (const agent of allAgents) {
-      const config = asRecord(agent.adapterConfig);
-      if (!config) continue;
-      const env = asRecord(config.env);
-      if (!env) continue;
-      const matchingKeys: string[] = [];
-      for (const [key, rawBinding] of Object.entries(env)) {
-        const binding = asRecord(rawBinding);
-        if (!binding) continue;
-        if (binding.type === "secret_ref" && binding.secretId === secretId) {
-          matchingKeys.push(key);
-        }
-      }
-      if (matchingKeys.length > 0) {
-        agentRefs.push({ id: agent.id, name: agent.name, envKeys: matchingKeys });
-      }
-    }
-
-    const skillRows = await db
-      .select({
-        id: companySkills.id,
-        name: companySkills.name,
-        slug: companySkills.slug,
-      })
-      .from(companySkills)
-      .where(and(
-        eq(companySkills.companyId, companyId),
-        sql`${companySkills.metadata} ->> 'sourceAuthSecretId' = ${secretId}`,
-      ));
-    const skillRefs: SecretUsageSkill[] = skillRows.map((row) => ({
-      id: row.id,
-      name: row.name,
-      slug: row.slug,
-    }));
-
-    return { agents: agentRefs, skills: skillRefs };
   }
 
   async function getByName(companyId: string, name: string) {
@@ -2083,16 +2035,6 @@ export function secretService(db: Db) {
     remove: async (secretId: string) => {
       const secret = await getById(secretId);
       if (!secret) return null;
-      const used = await usages(secret.companyId, secretId);
-      if (used.agents.length > 0 || used.skills.length > 0) {
-        const agentNames = used.agents.map((agent) => agent.name);
-        const skillNames = used.skills.map((skill) => skill.name);
-        const names = [...agentNames, ...skillNames].sort((left, right) => left.localeCompare(right));
-        throw unprocessable(
-          `Cannot delete secret "${secret.name}" while it is still used by ${names.join(", ")}. Detach it from those references first.`,
-          { secretId, usedByAgents: used.agents, usedBySkills: used.skills },
-        );
-      }
       const versionRow = await getSecretVersion(secret.id, secret.latestVersion);
       const providerId = secret.provider as SecretProvider;
       const provider = getSecretProvider(providerId);
@@ -2138,8 +2080,6 @@ export function secretService(db: Db) {
       await db.delete(companySecrets).where(eq(companySecrets.id, secretId));
       return secret;
     },
-
-    usages,
 
     normalizeAdapterConfigForPersistence: async (
       companyId: string,
