@@ -69,7 +69,6 @@ export function CompanySettingsSidebar() {
             end
           />
           <SidebarNavItem to="/company/settings/invites" label="Invites" icon={MailPlus} end />
-          <SidebarNavItem to="/company/settings/secrets" label="Secrets" icon={KeyRound} end />
         </div>
       </nav>
     </aside>
