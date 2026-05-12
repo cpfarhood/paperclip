@@ -36,4 +36,12 @@ describe("kubernetesProviderConfigSchema", () => {
       parseKubernetesProviderConfig({ inCluster: true, egressAllowCidrs: ["not-a-cidr"] }),
     ).toThrow(/CIDR/i);
   });
+
+  it("rejects CIDRs with invalid octets or prefixes", () => {
+    for (const cidr of ["999.0.0.0/8", "10.0.0.0/99", "10.0.0/24"]) {
+      expect(() =>
+        parseKubernetesProviderConfig({ inCluster: true, egressAllowCidrs: [cidr] }),
+      ).toThrow(/CIDR/i);
+    }
+  });
 });

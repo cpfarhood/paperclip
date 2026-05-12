@@ -56,5 +56,6 @@ describe("buildCiliumNetworkPolicyManifest", () => {
     });
     const cidrRule = cnp.spec.egress.find((e: { toCIDRSet?: { cidr: string }[] }) => e.toCIDRSet);
     expect(cidrRule.toCIDRSet[0].cidr).toBe("10.0.0.0/8");
+    expect(cidrRule.toPorts).toEqual([{ ports: [{ port: "443", protocol: "TCP" }] }]);
   });
 });

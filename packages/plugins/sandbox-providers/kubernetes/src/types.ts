@@ -1,7 +1,27 @@
 import { z } from "zod";
 import { KNOWN_ADAPTER_TYPES } from "./adapter-defaults.js";
 
-const cidrRegex = /^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}$/;
+function isIpv4Cidr(value: string): boolean {
+  const [address, prefix, extra] = value.split("/");
+  if (!address || !prefix || extra !== undefined || !/^\d+$/.test(prefix)) {
+    return false;
+  }
+
+  const prefixNumber = Number(prefix);
+  if (prefixNumber < 0 || prefixNumber > 32) {
+    return false;
+  }
+
+  const octets = address.split(".");
+  return octets.length === 4 && octets.every((octet) => {
+    if (!/^\d+$/.test(octet)) {
+      return false;
+    }
+
+    const value = Number(octet);
+    return value >= 0 && value <= 255;
+  });
+}
 
 export const kubernetesProviderConfigSchema = z
   .object({
@@ -16,7 +36,7 @@ export const kubernetesProviderConfigSchema = z
     imagePullSecrets: z.array(z.string()).default([]),
 
     egressAllowFqdns: z.array(z.string()).default([]),
-    egressAllowCidrs: z.array(z.string().regex(cidrRegex, "Invalid CIDR")).default([]),
+    egressAllowCidrs: z.array(z.string().refine(isIpv4Cidr, "Invalid CIDR")).default([]),
     egressMode: z.enum(["cilium", "standard"]).default("standard"),
 
     defaultResources: z

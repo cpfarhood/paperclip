@@ -49,6 +49,7 @@ export function buildCiliumNetworkPolicyManifest(input: BuildCiliumNetworkPolicy
   if (input.egressAllowCidrs.length > 0) {
     egress.push({
       toCIDRSet: input.egressAllowCidrs.map((cidr) => ({ cidr })),
+      toPorts: [{ ports: [{ port: "443", protocol: "TCP" }] }],
     });
   }
 
