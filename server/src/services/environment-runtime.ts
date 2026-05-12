@@ -104,6 +104,14 @@ export interface EnvironmentDriverAcquireInput {
   environment: Environment;
   issueId: string | null;
   /**
+   * UUID of the owning agent. Null for ad-hoc invocations (e.g.
+   * operator-initiated `Test` probes) that are not tied to a specific agent.
+   * Threaded through to plugin-backed sandbox providers so they can scope
+   * lease state (PVCs, subdirs, etc.) per-agent without needing to look it
+   * up via callback.
+   */
+  agentId: string | null;
+  /**
    * UUID of the owning heartbeat run, or null for ad-hoc invocations
    * (e.g. operator-initiated `Test` probes) that are not tied to a run.
    * Null leases must be released by id via `getDriver(...).releaseRunLease`
@@ -468,6 +476,7 @@ function createSandboxEnvironmentDriver(
                 config: workerConfig,
                 providerLeaseId: reusableLease.providerLeaseId,
                 leaseMetadata: reusableLease.metadata ?? undefined,
+                ...(input.agentId ? { agentId: input.agentId } : {}),
               },
               resolvePluginSandboxRpcTimeoutMs(workerConfig),
             ).then((resumed) =>
@@ -489,6 +498,7 @@ function createSandboxEnvironmentDriver(
             // UUID so providers that validate or persist the runId still see
             // a well-formed identifier.
             runId: input.heartbeatRunId ?? randomUUID(),
+            ...(input.agentId ? { agentId: input.agentId } : {}),
             workspaceMode: input.executionWorkspaceMode ?? undefined,
           },
           resolvePluginSandboxRpcTimeoutMs(workerConfig),
@@ -897,6 +907,7 @@ function createPluginEnvironmentDriver(
         issueId: input.issueId,
         config: parsed.config.driverConfig,
         runId: input.heartbeatRunId ?? randomUUID(),
+        ...(input.agentId ? { agentId: input.agentId } : {}),
         workspaceMode: input.executionWorkspaceMode ?? undefined,
       });
 
@@ -1110,6 +1121,11 @@ export function environmentRuntimeService(
       companyId: string;
       environment: Environment;
       issueId: string | null;
+      /**
+       * UUID of the owning agent. Null for ad-hoc invocations (e.g.
+       * operator-initiated `Test` probes).
+       */
+      agentId: string | null;
       /** Null for ad-hoc invocations (e.g. operator-initiated `Test` probes). */
       heartbeatRunId: string | null;
       persistedExecutionWorkspace: Pick<ExecutionWorkspace, "id" | "mode"> | null;
@@ -1126,6 +1142,7 @@ export function environmentRuntimeService(
         companyId: input.companyId,
         environment: input.environment,
         issueId: input.issueId,
+        agentId: input.agentId,
         heartbeatRunId: input.heartbeatRunId,
         executionWorkspaceId: leaseContext.executionWorkspaceId,
         executionWorkspaceMode: leaseContext.executionWorkspaceMode,

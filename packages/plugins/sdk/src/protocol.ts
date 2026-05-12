@@ -379,6 +379,13 @@ export interface PluginEnvironmentLease {
 
 export interface PluginEnvironmentAcquireLeaseParams extends PluginEnvironmentDriverBaseParams {
   runId: string;
+  /**
+   * UUID of the agent the run is being acquired for. Omitted only for ad-hoc
+   * invocations (e.g. operator-initiated environment test probes) where no
+   * agent context exists. Plugins should treat undefined as "no per-agent
+   * partitioning available" and fall back to environment-level behavior.
+   */
+  agentId?: string;
   workspaceMode?: string;
   requestedCwd?: string;
 }
@@ -386,6 +393,14 @@ export interface PluginEnvironmentAcquireLeaseParams extends PluginEnvironmentDr
 export interface PluginEnvironmentResumeLeaseParams extends PluginEnvironmentDriverBaseParams {
   providerLeaseId: string;
   leaseMetadata?: Record<string, unknown>;
+  /**
+   * UUID of the agent the run is being resumed for. Symmetric with
+   * `PluginEnvironmentAcquireLeaseParams.agentId`. Plugins can compare this
+   * to the agentId they stored in `leaseMetadata` at acquire time; if it
+   * doesn't match, return `{ providerLeaseId: null, metadata: { expired: true } }`
+   * to force the host to create a fresh lease for the current agent.
+   */
+  agentId?: string;
 }
 
 export interface PluginEnvironmentReleaseLeaseParams extends PluginEnvironmentDriverBaseParams {
