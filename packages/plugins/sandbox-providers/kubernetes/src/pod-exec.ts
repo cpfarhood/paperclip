@@ -14,11 +14,21 @@ import { Exec } from "@kubernetes/client-node";
 import { PassThrough } from "node:stream";
 import type { KubeConfig } from "@kubernetes/client-node";
 
+type WebSocketLike = {
+  close(): void;
+  on(event: "close", listener: (code: number, reason: Buffer) => void): void;
+  on(event: "error", listener: (err: Error) => void): void;
+};
+
 export interface ExecInPodResult {
   exitCode: number;
   timedOut: boolean;
   stdout: string;
   stderr: string;
+}
+
+function shQuoteArg(arg: string): string {
+  return "'" + arg.replace(/'/g, "'\\''") + "'";
 }
 
 export async function execInPod(
@@ -27,18 +37,21 @@ export async function execInPod(
   podName: string,
   containerName: string,
   command: string[],
-  stdin?: string,
+  stdin?: string | Buffer,
   timeoutMs?: number,
 ): Promise<ExecInPodResult> {
   const exec = new Exec(kc);
   const stdoutStream = new PassThrough();
   const stderrStream = new PassThrough();
 
-  // If stdin is provided build a readable stream from it; the Exec API accepts
-  // a Readable | null for stdin.
-  const stdinStream: import("node:stream").Readable | null = stdin
-    ? PassThrough.from(stdin)
+  const stdinPayload: Buffer | null =
+    Buffer.isBuffer(stdin) ? stdin
+    : typeof stdin === "string" && stdin.length > 0 ? Buffer.from(stdin, "utf-8")
     : null;
+  const stdinStream: PassThrough | null = stdinPayload ? new PassThrough() : null;
+  const effectiveCommand = stdinPayload
+    ? ["/bin/sh", "-c", `head -c ${stdinPayload.length} | ${command.map(shQuoteArg).join(" ")}`]
+    : command;
 
   let stdoutData = "";
   let stderrData = "";
@@ -52,17 +65,27 @@ export async function execInPod(
 
   return await new Promise<ExecInPodResult>(
     (resolve, reject) => {
+      let ws: WebSocketLike | null = null;
       let settled = false;
+      let pendingResult: Omit<ExecInPodResult, "stdout" | "stderr"> | null = null;
+      let stdoutEnded = false;
+      let stderrEnded = false;
       const timeout =
         typeof timeoutMs === "number" && timeoutMs > 0
           ? setTimeout(() => {
               finishWithTransportFailure(`Kubernetes exec timed out after ${timeoutMs}ms`, true);
             }, timeoutMs)
           : null;
+
       const finish = (result: ExecInPodResult) => {
         if (settled) return;
         settled = true;
         if (timeout) clearTimeout(timeout);
+        try {
+          ws?.close();
+        } catch {
+          // Ignore best-effort close failures.
+        }
         resolve(result);
       };
       const finishWithTransportFailure = (message: string, timedOut = false) => {
@@ -74,13 +97,30 @@ export async function execInPod(
           stderr: `${stderrData}${separator}${message}`,
         });
       };
+      const tryFinish = () => {
+        if (settled || !pendingResult || !stdoutEnded || !stderrEnded) return;
+        finish({
+          ...pendingResult,
+          stdout: stdoutData,
+          stderr: stderrData,
+        });
+      };
+
+      stdoutStream.on("end", () => {
+        stdoutEnded = true;
+        tryFinish();
+      });
+      stderrStream.on("end", () => {
+        stderrEnded = true;
+        tryFinish();
+      });
 
       const websocketPromise = exec
         .exec(
           namespace,
           podName,
           containerName,
-          command,
+          effectiveCommand,
           stdoutStream,
           stderrStream,
           stdinStream,
@@ -88,7 +128,8 @@ export async function execInPod(
           (status) => {
             // status.status is "Success" | "Failure"
             if (status.status === "Success") {
-              finish({ exitCode: 0, timedOut: false, stdout: stdoutData, stderr: stderrData });
+              pendingResult = { exitCode: 0, timedOut: false };
+              tryFinish();
               return;
             }
             // On failure, the exit code surfaces via
@@ -101,19 +142,25 @@ export async function execInPod(
             const exitCode = exitCodeCause?.message
               ? Number(exitCodeCause.message)
               : 1;
-            finish({ exitCode, timedOut: false, stdout: stdoutData, stderr: stderrData });
+            pendingResult = { exitCode, timedOut: false };
+            tryFinish();
           },
         );
 
       websocketPromise
-        .then((ws) => {
+        .then((webSocket) => {
+          ws = webSocket as WebSocketLike;
+          if (stdinStream && stdinPayload) {
+            stdinStream.removeAllListeners("end");
+            stdinStream.end(stdinPayload);
+          }
           ws.on("close", (code: number, reason: Buffer) => {
-            if (settled) return;
+            if (settled || pendingResult) return;
             const reasonText = reason.length > 0 ? `: ${reason.toString("utf-8")}` : "";
             finishWithTransportFailure(`Kubernetes exec websocket closed before status frame (${code})${reasonText}`);
           });
           ws.on("error", (err: Error) => {
-            if (settled) return;
+            if (settled || pendingResult) return;
             finishWithTransportFailure(`Kubernetes exec websocket failed before status frame: ${err.message}`);
           });
         })

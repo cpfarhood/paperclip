@@ -94,9 +94,10 @@ The plugin's `onEnvironmentAcquireLease` will:
 
 1. `ensureTenant` — provision the `paperclip-smoke` namespace, SA, Role,
    RoleBinding, ResourceQuota, LimitRange, NetworkPolicies
-2. `buildJobManifest` — render the security-hardened Job manifest
-3. `createJob` — submit to `batch/v1`
-4. `createPerRunSecret` — owned by the Job for cascade-delete
+2. `buildSandboxCrManifest` — render the security-hardened Sandbox CR manifest
+3. `createNamespacedCustomObject` — submit to `agents.x-k8s.io/v1alpha1`
+4. `createPerRunSecret` — owned by the Sandbox CR for cascade-delete
+5. Fast-upload workspace/config/skill payloads by collapsing adapter-utils chunked uploads into a single stdin-backed exec per file
 
 ### 7. Verify the tenant resources
 
@@ -113,8 +114,9 @@ Expected:
 - Role `paperclip-tenant-role`, RoleBinding `paperclip-tenant-rb`
 - ResourceQuota `paperclip-quota`, LimitRange `paperclip-limits`
 - NetworkPolicies `paperclip-deny-all` + `paperclip-egress-allow`
-- Job `pc-{ulid}` and its child Pod
-- Secret `pc-{ulid}-env` with `ownerReferences` pointing at the Job
+- Sandbox `pc-{ulid}` and its managed Pod
+- Secret `pc-{ulid}-env` with `ownerReferences` pointing at the Sandbox CR
+- Run logs or plugin metadata include `fastUpload: "flush"` entries during workspace/config/skill upload
 
 ### 8. Tear down
 

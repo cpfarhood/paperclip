@@ -17,6 +17,8 @@ describe("execInPod", () => {
   it("returns success when the Kubernetes exec status callback reports success", async () => {
     execMock.mockImplementation((_namespace, _pod, _container, _command, stdout, _stderr, _stdin, _tty, statusCallback) => {
       stdout.write("ok\n");
+      stdout.end();
+      _stderr.end();
       statusCallback({ status: "Success" });
       return Promise.resolve(new EventEmitter());
     });
@@ -48,5 +50,32 @@ describe("execInPod", () => {
     expect(result.exitCode).toBe(1);
     expect(result.timedOut).toBe(true);
     expect(result.stderr).toContain("Kubernetes exec timed out after 5ms");
+  });
+
+  it("wraps stdin commands with a byte-counted head prefix", async () => {
+    let observedCommand: string[] | undefined;
+    let observedStdin = "";
+    let observedStdinFinished = false;
+
+    execMock.mockImplementation((_namespace, _pod, _container, command, stdout, stderr, stdin, _tty, statusCallback) => {
+      observedCommand = command;
+      stdin?.on("data", (chunk: Buffer) => {
+        observedStdin += chunk.toString("utf8");
+      });
+      stdin?.on("finish", () => {
+        observedStdinFinished = true;
+      });
+      stdout.end();
+      stderr.end();
+      statusCallback({ status: "Success" });
+      return Promise.resolve(new EventEmitter());
+    });
+
+    await execInPod({} as never, "ns", "pod-1", "agent", ["base64", "-d"], "abc");
+    await Promise.resolve();
+
+    expect(observedCommand).toEqual(["/bin/sh", "-c", "head -c 3 | 'base64' '-d'"]);
+    expect(observedStdin).toBe("abc");
+    expect(observedStdinFinished).toBe(true);
   });
 });

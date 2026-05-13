@@ -25,6 +25,7 @@ import { buildJobManifest } from "./pod-spec-builder.js";
 import { buildSandboxCrManifest } from "./sandbox-cr-builder.js";
 import { ensureTenant } from "./tenant-orchestrator.js";
 import { createPerRunSecret } from "./secret-manager.js";
+import { FastUploadInterceptor } from "./upload-interceptor.js";
 import { jobOrchestrator, JobTimeoutError } from "./job-orchestrator.js";
 import {
   sandboxCrOrchestrator,
@@ -50,6 +51,29 @@ const DEFAULT_RESOURCE_QUOTA = {
   limitsCpu: "20",
   limitsMemory: "40Gi",
 };
+
+const uploadInterceptorsByLease = new Map<string, FastUploadInterceptor>();
+
+function getOrCreateUploadInterceptor(leaseId: string): FastUploadInterceptor {
+  let interceptor = uploadInterceptorsByLease.get(leaseId);
+  if (!interceptor) {
+    interceptor = new FastUploadInterceptor();
+    uploadInterceptorsByLease.set(leaseId, interceptor);
+  }
+  return interceptor;
+}
+
+function extractShellScript(
+  params: Pick<PluginEnvironmentExecuteParams, "args" | "command">,
+): string | null {
+  const command = typeof params.command === "string" ? params.command.trim() : "";
+  const args = Array.isArray(params.args) ? params.args : [];
+  const isShell = command === "sh" || command === "bash" || command.endsWith("/sh") || command.endsWith("/bash");
+  if (isShell && args[0] === "-c" && typeof args[1] === "string") {
+    return args[1];
+  }
+  return null;
+}
 
 function deriveTenantNamespace(config: KubernetesProviderConfig, companyId: string): string {
   // TODO: future versions could thread companyName through AcquireLeaseParams
@@ -91,6 +115,24 @@ export function extractAdapterEnvFromProcess(
 
 function shellQuoteArg(arg: string): string {
   return "'" + arg.replace(/'/g, "'\\''") + "'";
+}
+
+export function buildSandboxExecCommand(
+  params: Pick<PluginEnvironmentExecuteParams, "args" | "command">,
+): string[] {
+  const command = typeof params.command === "string" ? params.command.trim() : "";
+  const args = Array.isArray(params.args) ? params.args : [];
+
+  if (command.length > 0 && args.length > 0) {
+    return [command, ...args];
+  }
+  if (command.length > 0) {
+    return ["/bin/sh", "-lc", command];
+  }
+  if (args.length > 0) {
+    return ["/bin/sh", "-lc", args.map(shellQuoteArg).join(" ")];
+  }
+  return ["/bin/sh", "-l"];
 }
 
 export function buildSandboxExecShellCommand(
@@ -379,6 +421,8 @@ const plugin = definePlugin({
     const releaseOrchestrator =
       leaseBackend === "sandbox-cr" ? sandboxCrOrchestrator : jobOrchestrator;
 
+    uploadInterceptorsByLease.delete(params.providerLeaseId);
+
     try {
       await releaseOrchestrator.release(clients, namespace, params.providerLeaseId);
     } catch (err) {
@@ -488,15 +532,62 @@ const plugin = definePlugin({
         };
       }
 
-      // Build the command to exec. If params.command is provided use it;
-      // otherwise wrap in a login shell so profile scripts run.
-      const rawCommand = buildSandboxExecShellCommand(params);
-
-      const execCommand = rawCommand.length > 0
-        ? ["/bin/sh", "-lc", rawCommand]
-        : ["/bin/sh", "-l"];
-
       const remainingTimeoutMs = Math.max(1, effectiveTimeoutMs - (Date.now() - executeStartedAt));
+
+      const shellScript = extractShellScript(params);
+      if (shellScript) {
+        const decision = getOrCreateUploadInterceptor(lease.providerLeaseId).decide(shellScript);
+        if (decision.action === "ack") {
+          return {
+            exitCode: 0,
+            timedOut: false,
+            stdout: "",
+            stderr: "",
+            metadata: {
+              provider: "kubernetes",
+              backend: "sandbox-cr",
+              namespace,
+              sandboxName: lease.providerLeaseId,
+              podName,
+              fastUpload: "ack",
+            },
+          };
+        }
+        if (decision.action === "flush") {
+          const base64Body = decision.flush.payload.toString("base64");
+          const slashIndex = decision.flush.targetPath.lastIndexOf("/");
+          const dir = slashIndex > 0 ? decision.flush.targetPath.slice(0, slashIndex) : ".";
+          const script =
+            `mkdir -p ${shellQuoteArg(dir)} && ` +
+            `head -c ${base64Body.length} | base64 -d > ${shellQuoteArg(decision.flush.targetPath)}`;
+          const flushResult = await execInPod(
+            kc,
+            namespace,
+            podName,
+            "agent",
+            ["/bin/sh", "-c", script],
+            base64Body,
+            remainingTimeoutMs,
+          );
+          return {
+            exitCode: flushResult.exitCode,
+            timedOut: flushResult.timedOut,
+            stdout: flushResult.stdout,
+            stderr: flushResult.stderr,
+            metadata: {
+              provider: "kubernetes",
+              backend: "sandbox-cr",
+              namespace,
+              sandboxName: lease.providerLeaseId,
+              podName,
+              fastUpload: "flush",
+              uploadedBytes: decision.flush.payload.length,
+            },
+          };
+        }
+      }
+
+      const execCommand = buildSandboxExecCommand(params);
       const execResult = await execInPod(
         kc,
         namespace,

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import plugin, {
+  buildSandboxExecCommand,
   buildSandboxExecShellCommand,
   extractAdapterEnvFromProcess,
 } from "../../src/plugin.js";
@@ -160,5 +161,22 @@ describe("plugin", () => {
         args: ["ignored"],
       }),
     ).toBe("pnpm test -- --runInBand");
+  });
+
+  it("passes command and args directly to Kubernetes exec", () => {
+    expect(
+      buildSandboxExecCommand({
+        command: "sh",
+        args: ["-c", "printf '%s' ok"],
+      }),
+    ).toEqual(["sh", "-c", "printf '%s' ok"]);
+  });
+
+  it("wraps command-only execution in a login shell", () => {
+    expect(
+      buildSandboxExecCommand({
+        command: "pnpm test -- --runInBand",
+      }),
+    ).toEqual(["/bin/sh", "-lc", "pnpm test -- --runInBand"]);
   });
 });
