@@ -1345,13 +1345,13 @@ export function CompanySkills() {
                 {importSkill.isPending ? <RefreshCw className="h-4 w-4 animate-spin" /> : "Add"}
               </Button>
             </div>
-            {source.trim().length > 0 && /github\.com|^[a-zA-Z0-9_-]+\/[a-zA-Z0-9_.-]+/.test(source.trim()) && (
+            {source.trim().length > 0 && (
               <div className="mt-1 flex items-center gap-2 border-b border-border pb-2">
                 <input
                   type="password"
                   value={importAuthToken}
                   onChange={(event) => setImportAuthToken(event.target.value)}
-                  placeholder="GitHub PAT (optional, for private repos)"
+                  placeholder="Personal access token (optional, for private repos)"
                   className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
                   autoComplete="off"
                 />
