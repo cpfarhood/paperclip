@@ -137,6 +137,25 @@ vi.mock("../routes/org-chart-svg.js", () => ({
   renderOrgChartPng: vi.fn(async () => Buffer.from("png")),
 }));
 
+const gitSourceMock = vi.hoisted(() => ({
+  resolveGitRef: vi.fn(),
+  openRepoSnapshot: vi.fn(),
+}));
+
+// parseGitSourceUrl stays real (the shim parseGitHubSourceUrl delegates to it
+// and is asserted by existing tests). Only the network-touching functions are
+// overridable per-test.
+vi.mock("../services/git-source.js", async () => {
+  const actual = await vi.importActual<typeof import("../services/git-source.js")>(
+    "../services/git-source.js",
+  );
+  return {
+    ...actual,
+    resolveGitRef: gitSourceMock.resolveGitRef,
+    openRepoSnapshot: gitSourceMock.openRepoSnapshot,
+  };
+});
+
 const { companyPortabilityService, parseGitHubSourceUrl } = await import("../services/company-portability.js");
 
 function asTextFile(entry: CompanyPortabilityFileEntry | undefined) {
@@ -3376,5 +3395,175 @@ describe("company portability", () => {
     expect(preview.plan.agentPlans).toHaveLength(0);
     expect(preview.plan.projectPlans).toHaveLength(0);
     expect(preview.plan.issuePlans).toHaveLength(0);
+  });
+});
+
+describe("git source orchestration via resolveSource", () => {
+  const minimalCompanyMarkdown = "---\ncompany:\n  name: Demo\n---\n# Demo\n";
+  const githubUrl = "https://git.example.com/acme/co?ref=main&path=";
+
+  function makeSnapshot(overrides: {
+    files?: string[];
+    fileContents?: Record<string, string>;
+    binaryContents?: Record<string, Uint8Array>;
+    readBinaryReject?: Error;
+  } = {}) {
+    const files = overrides.files ?? ["COMPANY.md"];
+    const fileContents = overrides.fileContents ?? { "COMPANY.md": minimalCompanyMarkdown };
+    const binaryContents = overrides.binaryContents ?? {};
+    return {
+      sha: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+      listFiles: vi.fn(async () => files),
+      readFile: vi.fn(async (p: string) => {
+        if (p in fileContents) return fileContents[p];
+        throw Object.assign(new Error(`not found: ${p}`), { code: "NotFoundError" });
+      }),
+      readFileOptional: vi.fn(async (p: string) => fileContents[p] ?? null),
+      readBinary: vi.fn(async (p: string) => {
+        if (overrides.readBinaryReject) throw overrides.readBinaryReject;
+        if (p in binaryContents) return binaryContents[p]!;
+        throw Object.assign(new Error(`not found: ${p}`), { code: "NotFoundError" });
+      }),
+    };
+  }
+
+  function setupResolveStub() {
+    gitSourceMock.resolveGitRef.mockResolvedValue({
+      pinnedSha: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+      trackingRef: "main",
+    });
+  }
+
+  beforeEach(() => {
+    gitSourceMock.resolveGitRef.mockReset();
+    gitSourceMock.openRepoSnapshot.mockReset();
+    companySvc.getById.mockResolvedValue(null);
+    agentSvc.list.mockResolvedValue([]);
+    projectSvc.list.mockResolvedValue([]);
+    issueSvc.list.mockResolvedValue([]);
+    issueSvc.listComments.mockResolvedValue([]);
+    companySkillSvc.list.mockResolvedValue([]);
+  });
+
+  it("opens a snapshot and walks the tree for a github source", async () => {
+    setupResolveStub();
+    const snapshot = makeSnapshot({
+      files: ["COMPANY.md", "README.md", "skills/x/SKILL.md"],
+      fileContents: {
+        "COMPANY.md": minimalCompanyMarkdown,
+        "README.md": "# readme",
+        "skills/x/SKILL.md": "---\nname: x\n---\n",
+      },
+    });
+    gitSourceMock.openRepoSnapshot.mockResolvedValue(snapshot);
+
+    const portability = companyPortabilityService({} as any);
+    const preview = await portability.previewImport({
+      source: { type: "github", url: githubUrl },
+      include: { company: true, agents: false, projects: false, issues: false, skills: false },
+      target: { mode: "new_company", newCompanyName: "Demo" },
+      agents: "all",
+      collisionStrategy: "rename",
+    });
+
+    expect(gitSourceMock.resolveGitRef).toHaveBeenCalledTimes(1);
+    expect(gitSourceMock.openRepoSnapshot).toHaveBeenCalledTimes(1);
+    expect(snapshot.listFiles).toHaveBeenCalled();
+    expect(snapshot.readFileOptional).toHaveBeenCalledWith("COMPANY.md");
+    expect(snapshot.readFile).toHaveBeenCalledWith("README.md");
+    expect(snapshot.readFile).toHaveBeenCalledWith("skills/x/SKILL.md");
+    expect(preview.errors).toEqual([]);
+  });
+
+  it("falls back from main to master when the main ref does not exist", async () => {
+    setupResolveStub();
+    const masterSnap = makeSnapshot();
+    // First call (ref=main) rejects; second (ref=master) succeeds.
+    gitSourceMock.openRepoSnapshot
+      .mockRejectedValueOnce(new Error("ref not found"))
+      .mockResolvedValueOnce(masterSnap);
+
+    const portability = companyPortabilityService({} as any);
+    const preview = await portability.previewImport({
+      source: { type: "github", url: githubUrl },
+      include: { company: true, agents: false, projects: false, issues: false, skills: false },
+      target: { mode: "new_company", newCompanyName: "Demo" },
+      agents: "all",
+      collisionStrategy: "rename",
+    });
+
+    expect(gitSourceMock.openRepoSnapshot).toHaveBeenCalledTimes(2);
+    expect(masterSnap.readFileOptional).toHaveBeenCalledWith("COMPANY.md");
+    expect(preview.warnings).toContain("Git ref main not found; falling back to master.");
+  });
+
+  it("throws when COMPANY.md is missing on both main and master", async () => {
+    setupResolveStub();
+    const emptySnap = makeSnapshot({ fileContents: {} });
+    gitSourceMock.openRepoSnapshot.mockResolvedValue(emptySnap);
+
+    const portability = companyPortabilityService({} as any);
+    await expect(
+      portability.previewImport({
+        source: { type: "github", url: githubUrl },
+        include: { company: true, agents: false, projects: false, issues: false, skills: false },
+        target: { mode: "new_company", newCompanyName: "Demo" },
+        agents: "all",
+        collisionStrategy: "rename",
+      }),
+    ).rejects.toThrow(/missing COMPANY.md/i);
+  });
+
+  it("fetches a referenced company logo as binary", async () => {
+    setupResolveStub();
+    // logoPath lives in .paperclip.yaml (paperclip extension), not COMPANY.md.
+    const paperclipYaml = "company:\n  logoPath: images/logo.png\n";
+    const logoBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+    const snapshot = makeSnapshot({
+      files: ["COMPANY.md", ".paperclip.yaml", "images/logo.png"],
+      fileContents: {
+        "COMPANY.md": minimalCompanyMarkdown,
+        ".paperclip.yaml": paperclipYaml,
+      },
+      binaryContents: { "images/logo.png": logoBytes },
+    });
+    gitSourceMock.openRepoSnapshot.mockResolvedValue(snapshot);
+
+    const portability = companyPortabilityService({} as any);
+    await portability.previewImport({
+      source: { type: "github", url: githubUrl },
+      include: { company: true, agents: false, projects: false, issues: false, skills: false },
+      target: { mode: "new_company", newCompanyName: "Demo" },
+      agents: "all",
+      collisionStrategy: "rename",
+    });
+
+    expect(snapshot.readBinary).toHaveBeenCalledWith("images/logo.png");
+  });
+
+  it("warns instead of throwing when the logo blob can't be read", async () => {
+    setupResolveStub();
+    const paperclipYaml = "company:\n  logoPath: images/logo.png\n";
+    const snapshot = makeSnapshot({
+      files: ["COMPANY.md", ".paperclip.yaml"],
+      fileContents: {
+        "COMPANY.md": minimalCompanyMarkdown,
+        ".paperclip.yaml": paperclipYaml,
+      },
+      readBinaryReject: new Error("blob missing"),
+    });
+    gitSourceMock.openRepoSnapshot.mockResolvedValue(snapshot);
+
+    const portability = companyPortabilityService({} as any);
+    const preview = await portability.previewImport({
+      source: { type: "github", url: githubUrl },
+      include: { company: true, agents: false, projects: false, issues: false, skills: false },
+      target: { mode: "new_company", newCompanyName: "Demo" },
+      agents: "all",
+      collisionStrategy: "rename",
+    });
+
+    expect(snapshot.readBinary).toHaveBeenCalled();
+    expect(preview.warnings.some((w: string) => /Failed to fetch company logo/i.test(w))).toBe(true);
   });
 });
