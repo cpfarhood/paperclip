@@ -145,6 +145,43 @@ describe("parseGitSourceUrl", () => {
   it("rejects malformed URLs", () => {
     expect(() => parseGitSourceUrl("not a url")).toThrow();
   });
+
+  it("parses a query-string URL with ?ref= and ?path=", () => {
+    expect(
+      parseGitSourceUrl("https://github.com/o/r?ref=feature%2Fdemo&path=subdir"),
+    ).toMatchObject({
+      cloneUrl: "https://github.com/o/r.git",
+      ref: "feature/demo",
+      basePath: "subdir",
+      filePath: null,
+      explicitRef: true,
+    });
+  });
+
+  it("parses a query-string URL with only ?ref=", () => {
+    expect(parseGitSourceUrl("https://github.com/o/r?ref=develop")).toMatchObject({
+      ref: "develop",
+      basePath: "",
+      explicitRef: true,
+    });
+  });
+
+  it("parses a query-string URL with only ?path=", () => {
+    expect(parseGitSourceUrl("https://github.com/o/r?path=sub")).toMatchObject({
+      ref: null,
+      basePath: "sub",
+      explicitRef: false,
+    });
+  });
+
+  it("query-string parsing takes precedence over path-style segments", () => {
+    expect(
+      parseGitSourceUrl("https://github.com/o/r/tree/main/old?ref=newref&path=newpath"),
+    ).toMatchObject({
+      ref: "newref",
+      basePath: "newpath",
+    });
+  });
 });
 
 describe("buildCloneUrl", () => {
@@ -332,5 +369,42 @@ describe("openRepoSnapshot", () => {
     await expect(
       openRepoSnapshot(parsed, "main", "1111111111111111111111111111111111111111"),
     ).rejects.toThrow(/repository not found/i);
+  });
+
+  it("readBinary returns the raw blob bytes", async () => {
+    cloneFn.mockResolvedValue(undefined);
+    resolveRefFn.mockResolvedValue("ffffffffffffffffffffffffffffffffffffffff");
+    walkFn.mockImplementation(async () => {});
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+    readBlobFn.mockResolvedValue({ blob: bytes });
+
+    const parsed = parseGitSourceUrl("https://git.example.com/o/r");
+    const snap = await openRepoSnapshot(parsed, "main", "ffffffffffffffffffffffffffffffffffffffff");
+    const result = await snap.readBinary("logo.png");
+    expect(result).toBe(bytes);
+  });
+
+  it("readFileOptional returns null on NotFoundError", async () => {
+    cloneFn.mockResolvedValue(undefined);
+    resolveRefFn.mockResolvedValue("ffffffffffffffffffffffffffffffffffffffff");
+    walkFn.mockImplementation(async () => {});
+    const err = Object.assign(new Error("missing"), { code: "NotFoundError" });
+    readBlobFn.mockRejectedValue(err);
+
+    const parsed = parseGitSourceUrl("https://git.example.com/o/r");
+    const snap = await openRepoSnapshot(parsed, "main", "ffffffffffffffffffffffffffffffffffffffff");
+    const result = await snap.readFileOptional("missing.md");
+    expect(result).toBeNull();
+  });
+
+  it("readFileOptional rethrows non-NotFound errors", async () => {
+    cloneFn.mockResolvedValue(undefined);
+    resolveRefFn.mockResolvedValue("ffffffffffffffffffffffffffffffffffffffff");
+    walkFn.mockImplementation(async () => {});
+    readBlobFn.mockRejectedValue(new Error("disk explosion"));
+
+    const parsed = parseGitSourceUrl("https://git.example.com/o/r");
+    const snap = await openRepoSnapshot(parsed, "main", "ffffffffffffffffffffffffffffffffffffffff");
+    await expect(snap.readFileOptional("any.md")).rejects.toThrow(/disk explosion/);
   });
 });

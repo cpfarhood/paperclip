@@ -57,7 +57,7 @@ import {
 import { requireOpenCodeModelId } from "@paperclipai/adapter-opencode-local/server";
 import { findServerAdapter } from "../adapters/index.js";
 import { forbidden, HttpError, notFound, unprocessable } from "../errors.js";
-import { ghFetch, gitHubApiBase, resolveRawGitHubUrl } from "./github-fetch.js";
+import { openRepoSnapshot, parseGitSourceUrl, resolveGitRef, type RepoSnapshot } from "./git-source.js";
 import type { StorageService } from "../storage/types.js";
 import { accessService } from "./access.js";
 import { agentService } from "./agents.js";
@@ -2339,42 +2339,6 @@ function parseFrontmatterMarkdown(raw: string): MarkdownDoc {
   };
 }
 
-async function fetchText(url: string) {
-  const response = await ghFetch(url);
-  if (!response.ok) {
-    throw unprocessable(`Failed to fetch ${url}: ${response.status}`);
-  }
-  return response.text();
-}
-
-async function fetchOptionalText(url: string) {
-  const response = await ghFetch(url);
-  if (response.status === 404) return null;
-  if (!response.ok) {
-    throw unprocessable(`Failed to fetch ${url}: ${response.status}`);
-  }
-  return response.text();
-}
-
-async function fetchBinary(url: string) {
-  const response = await ghFetch(url);
-  if (!response.ok) {
-    throw unprocessable(`Failed to fetch ${url}: ${response.status}`);
-  }
-  return Buffer.from(await response.arrayBuffer());
-}
-
-async function fetchJson<T>(url: string): Promise<T> {
-  const response = await ghFetch(url, {
-    headers: {
-      accept: "application/vnd.github+json",
-    },
-  });
-  if (!response.ok) {
-    throw unprocessable(`Failed to fetch ${url}: ${response.status}`);
-  }
-  return response.json() as Promise<T>;
-}
 
 function dedupeEnvInputs(values: CompanyPortabilityManifest["envInputs"]) {
   const seen = new Set<string>();
@@ -2864,52 +2828,37 @@ function normalizeGitHubSourcePath(value: string | null | undefined) {
 
 export function parseGitHubSourceUrl(rawUrl: string) {
   const url = new URL(rawUrl);
-  if (url.protocol !== "https:") {
-    throw unprocessable("GitHub source URL must use HTTPS");
-  }
-  const hostname = url.hostname;
-  const parts = url.pathname.split("/").filter(Boolean);
-  if (parts.length < 2) {
-    throw unprocessable("Invalid GitHub URL");
-  }
-  const owner = parts[0]!;
-  const repo = parts[1]!.replace(/\.git$/i, "");
-  const queryRef = url.searchParams.get("ref")?.trim();
-  const queryPath = normalizeGitHubSourcePath(url.searchParams.get("path"));
+  // Handle the portability-specific companyPath query param before delegating,
+  // since git-source has no notion of it.
   const queryCompanyPath = normalizeGitHubSourcePath(url.searchParams.get("companyPath"));
-  if (queryRef || queryPath || queryCompanyPath) {
-    const companyPath = queryCompanyPath || [queryPath, "COMPANY.md"].filter(Boolean).join("/") || "COMPANY.md";
-    let basePath = queryPath;
-    if (!basePath && companyPath !== "COMPANY.md") {
-      basePath = path.posix.dirname(companyPath);
-      if (basePath === ".") basePath = "";
+
+  const parsed = parseGitSourceUrl(rawUrl);
+
+  let companyPath: string;
+  let basePath = parsed.basePath;
+  if (queryCompanyPath) {
+    companyPath = queryCompanyPath;
+    if (!basePath) {
+      const derived = path.posix.dirname(companyPath);
+      basePath = derived === "." ? "" : derived;
     }
-    return {
-      hostname,
-      owner,
-      repo,
-      ref: queryRef || "main",
-      basePath,
-      companyPath,
-    };
+  } else if (parsed.filePath) {
+    // blob-style URL pointed directly at a file
+    companyPath = parsed.filePath;
+  } else if (basePath) {
+    companyPath = `${basePath}/COMPANY.md`;
+  } else {
+    companyPath = "COMPANY.md";
   }
-  let ref = "main";
-  let basePath = "";
-  let companyPath = "COMPANY.md";
-  if (parts[2] === "tree") {
-    ref = parts[3] ?? "main";
-    basePath = parts.slice(4).join("/");
-  } else if (parts[2] === "blob") {
-    ref = parts[3] ?? "main";
-    const blobPath = parts.slice(4).join("/");
-    if (!blobPath) {
-      throw unprocessable("Invalid GitHub blob URL");
-    }
-    companyPath = blobPath;
-    basePath = path.posix.dirname(blobPath);
-    if (basePath === ".") basePath = "";
-  }
-  return { hostname, owner, repo, ref, basePath, companyPath };
+
+  return {
+    hostname: parsed.hostname,
+    owner: parsed.owner,
+    repo: parsed.repo,
+    ref: parsed.ref ?? "main",
+    basePath,
+    companyPath,
+  };
 }
 
 
@@ -3013,30 +2962,38 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
       );
     }
 
-    const parsed = parseGitHubSourceUrl(source.url);
-    let ref = parsed.ref;
+    const sourceUrl = source.url;
+    const parsed = parseGitHubSourceUrl(sourceUrl);
     const warnings: string[] = [];
     const companyRelativePath = parsed.companyPath === "COMPANY.md"
       ? [parsed.basePath, "COMPANY.md"].filter(Boolean).join("/")
       : parsed.companyPath;
+
+    async function openSnapshot(refName: string): Promise<RepoSnapshot> {
+      const ps = parseGitSourceUrl(sourceUrl);
+      const wanted = { ...ps, ref: refName, explicitRef: true };
+      const resolved = await resolveGitRef(wanted);
+      return openRepoSnapshot(wanted, resolved.trackingRef, resolved.pinnedSha);
+    }
+
+    let ref = parsed.ref;
+    let snapshot: RepoSnapshot;
     let companyMarkdown: string | null = null;
     try {
-      companyMarkdown = await fetchOptionalText(
-        resolveRawGitHubUrl(parsed.hostname, parsed.owner, parsed.repo, ref, companyRelativePath),
-      );
+      snapshot = await openSnapshot(ref);
+      companyMarkdown = await snapshot.readFileOptional(companyRelativePath);
     } catch (err) {
       if (ref === "main") {
         ref = "master";
-        warnings.push("GitHub ref main not found; falling back to master.");
-        companyMarkdown = await fetchOptionalText(
-          resolveRawGitHubUrl(parsed.hostname, parsed.owner, parsed.repo, ref, companyRelativePath),
-        );
+        warnings.push("Git ref main not found; falling back to master.");
+        snapshot = await openSnapshot(ref);
+        companyMarkdown = await snapshot.readFileOptional(companyRelativePath);
       } else {
         throw err;
       }
     }
     if (!companyMarkdown) {
-      throw unprocessable("GitHub company package is missing COMPANY.md");
+      throw unprocessable("Git company package is missing COMPANY.md");
     }
 
     const companyPath = parsed.companyPath === "COMPANY.md"
@@ -3045,31 +3002,22 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
     const files: Record<string, CompanyPortabilityFileEntry> = {
       [companyPath]: companyMarkdown,
     };
-    const apiBase = gitHubApiBase(parsed.hostname);
-    const tree = await fetchJson<{ tree?: Array<{ path: string; type: string }> }>(
-      `${apiBase}/repos/${parsed.owner}/${parsed.repo}/git/trees/${ref}?recursive=1`,
-    ).catch(() => ({ tree: [] }));
     const basePrefix = parsed.basePath ? `${parsed.basePath.replace(/^\/+|\/+$/g, "")}/` : "";
-    const candidatePaths = (tree.tree ?? [])
-      .filter((entry) => entry.type === "blob")
-      .map((entry) => entry.path)
-      .filter((entry): entry is string => typeof entry === "string")
-      .filter((entry) => {
-        if (basePrefix && !entry.startsWith(basePrefix)) return false;
-        const relative = basePrefix ? entry.slice(basePrefix.length) : entry;
-        return (
-          relative.endsWith(".md") ||
-          relative.startsWith("skills/") ||
-          relative === ".paperclip.yaml" ||
-          relative === ".paperclip.yml"
-        );
-      });
+    const allPaths = await snapshot.listFiles();
+    const candidatePaths = allPaths.filter((entry) => {
+      if (basePrefix && !entry.startsWith(basePrefix)) return false;
+      const relative = basePrefix ? entry.slice(basePrefix.length) : entry;
+      return (
+        relative.endsWith(".md") ||
+        relative.startsWith("skills/") ||
+        relative === ".paperclip.yaml" ||
+        relative === ".paperclip.yml"
+      );
+    });
     for (const repoPath of candidatePaths) {
       const relativePath = basePrefix ? repoPath.slice(basePrefix.length) : repoPath;
       if (files[relativePath] !== undefined) continue;
-      files[normalizePortablePath(relativePath)] = await fetchText(
-        resolveRawGitHubUrl(parsed.hostname, parsed.owner, parsed.repo, ref, repoPath),
-      );
+      files[normalizePortablePath(relativePath)] = await snapshot.readFile(repoPath);
     }
     const companyDoc = parseFrontmatterMarkdown(companyMarkdown);
     const includeEntries = readIncludeEntries(companyDoc.frontmatter);
@@ -3078,9 +3026,7 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
       const relativePath = normalizePortablePath(includeEntry.path);
       if (files[relativePath] !== undefined) continue;
       if (!(repoPath.endsWith(".md") || repoPath.endsWith(".yaml") || repoPath.endsWith(".yml"))) continue;
-      files[relativePath] = await fetchText(
-        resolveRawGitHubUrl(parsed.hostname, parsed.owner, parsed.repo, ref, repoPath),
-      );
+      files[relativePath] = await snapshot.readFile(repoPath);
     }
 
     const resolved = buildManifestFromPackageFiles(files);
@@ -3088,12 +3034,13 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
     if (companyLogoPath && !resolved.files[companyLogoPath]) {
       const repoPath = [parsed.basePath, companyLogoPath].filter(Boolean).join("/");
       try {
-        const binary = await fetchBinary(
-          resolveRawGitHubUrl(parsed.hostname, parsed.owner, parsed.repo, ref, repoPath),
+        const binary = await snapshot.readBinary(repoPath);
+        resolved.files[companyLogoPath] = bufferToPortableBinaryFile(
+          Buffer.from(binary),
+          inferContentTypeFromPath(companyLogoPath),
         );
-        resolved.files[companyLogoPath] = bufferToPortableBinaryFile(binary, inferContentTypeFromPath(companyLogoPath));
       } catch (err) {
-        warnings.push(`Failed to fetch company logo ${companyLogoPath} from GitHub: ${err instanceof Error ? err.message : String(err)}`);
+        warnings.push(`Failed to fetch company logo ${companyLogoPath} from git: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
     resolved.warnings.unshift(...warnings);

@@ -25,6 +25,8 @@ export type RepoSnapshot = {
   sha: string;
   listFiles(): Promise<string[]>;
   readFile(repoPath: string): Promise<string>;
+  readFileOptional(repoPath: string): Promise<string | null>;
+  readBinary(repoPath: string): Promise<Uint8Array>;
 };
 
 const SHA_REGEX = /^[0-9a-f]{40}$/i;
@@ -49,6 +51,25 @@ export function parseGitSourceUrl(rawUrl: string): ParsedGitSource {
   }
   const owner = segments[0]!;
   const repo = segments[1]!.replace(/\.git$/i, "");
+
+  // Query-string shape: /{owner}/{repo}?ref=...&path=...
+  // Used by company portability URLs. Takes precedence over path-based parsing
+  // so a URL with both shapes (rare) prefers the explicit query params.
+  const queryRef = url.searchParams.get("ref")?.trim() ?? null;
+  const queryPath = url.searchParams.get("path")?.trim() ?? null;
+  if (queryRef || queryPath) {
+    const normalizedPath = (queryPath ?? "").replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+    return {
+      cloneUrl: buildCloneUrl(url.hostname, owner, repo),
+      hostname: url.hostname,
+      owner,
+      repo,
+      ref: queryRef || null,
+      basePath: normalizedPath,
+      filePath: null,
+      explicitRef: Boolean(queryRef),
+    };
+  }
 
   let ref: string | null = null;
   let basePath = "";
@@ -233,11 +254,29 @@ export async function openRepoSnapshot(
     return out;
   }
 
-  async function readFile(repoPath: string): Promise<string> {
+  async function readBinary(repoPath: string): Promise<Uint8Array> {
     const normalized = repoPath.replace(/^\/+/, "");
     const { blob } = await git.readBlob({ fs, dir, oid: sha, filepath: normalized });
+    return blob;
+  }
+
+  async function readFile(repoPath: string): Promise<string> {
+    const blob = await readBinary(repoPath);
     return new TextDecoder("utf-8").decode(blob);
   }
 
-  return { sha, listFiles, readFile };
+  async function readFileOptional(repoPath: string): Promise<string | null> {
+    try {
+      return await readFile(repoPath);
+    } catch (err) {
+      // isomorphic-git throws NotFoundError when the path is missing from the tree.
+      const name = (err as { code?: string; name?: string } | null)?.code
+        ?? (err as { name?: string } | null)?.name
+        ?? "";
+      if (/NotFound/i.test(name)) return null;
+      throw err;
+    }
+  }
+
+  return { sha, listFiles, readFile, readFileOptional, readBinary };
 }
